@@ -46,10 +46,15 @@ arrangement-absolute. State sets also retain absolute playback by default; an
 explicit `state_stem_origin_ticks[state_name]` declares the absolute tick that
 corresponds to zero in a state-local file. Do not infer origins from filenames.
 `seek_tick()` repositions prepared players as well as chart/event cursors.
+An empty selection clears obsolete player streams so a later seek/jump cannot
+restart the preceding section. Pause also pauses the actual prepared players;
+a seek while paused prepares the new set but starts it only on Resume.
 
 The automated `tests/pcs_stem_origin_test.gd` uses deterministic PCM tones,
 actual Godot players and engine-bus capture with the warmed Dummy driver. It
-checks local/absolute positions in both player modes. It does not establish
+checks local/absolute positions and tone identity in both player modes,
+nonempty-to-empty silence, automatic A/B/repeated-A transitions with processing
+active, explicit state origins and pause/seek/resume. It does not establish
 physical output, human listening, source-engine fidelity or cold-load budgets.
 
 Suggested full-arrangement stem names:

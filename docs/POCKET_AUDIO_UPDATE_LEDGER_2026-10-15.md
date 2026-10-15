@@ -104,6 +104,8 @@ candidate `59f9c1e5ab3515f73af141c8e9d3bf3e15290584` (draft PR78). All PR78
 hosted checks are green, including Windows native, browser E2E, all family
 products, security/governance, Godot and both CodeQL languages. That CI status
 does not turn an uninstalled source candidate into installed listening evidence.
+The review correction at `ab0a29279c6ff1e63d906334f8f04bfa7a91a42d` is merged
+forward into this branch without rewriting either candidate's history.
 
 Implemented: original Core integer-delay pluck recipe, exact D/G/Bm/A voicings,
 76 BPM strum/picking fixture, complete note identity, bounded mutation-safe LRU,
@@ -134,3 +136,31 @@ target dependency inspection (`cargo tree --locked --target
 x86_64-pc-windows-msvc -i glib`) reports no dependency. No Tauri/GTK upgrade was
 made. The Linux dependency path needs deliberate upstream compatibility review;
 do not turn the clean npm audits into an all-ecosystem advisory claim.
+## Independent review correction — GODOT-01
+
+Independent review of `59f9c1e5ab3515f73af141c8e9d3bf3e15290584` correctly found
+that the empty-selection path stopped layer players but retained their streams.
+The subsequent start helper could replay stale A audio in an empty B section.
+The strengthened fixture also reproduced an existing prepared-stem Pause gap:
+chart pause alone left the actual players audible, including during paused seek.
+These findings supersede the initial fixture's narrower acceptance; the initial
+16 position/nonzero-PCM checks were insufficient to establish correct identity
+or empty-set silence.
+
+Fix: clear layer streams for empty selections and when handing ownership to the
+synchronized player. Pause/unpause the actual players. A paused seek prepares
+the set and records a pending start; Resume starts from the new origin. Ordinary
+pause/resume preserves the paused player instead of rebuilding it.
+
+Expanded acceptance uses captured 220/660/330/880 Hz identity, not nonzero peak
+alone. It covers direct/repeated sections, absolute full-song origins,
+nonempty-to-empty after both jump and seek, automatic B/repeated-A transitions
+with conductor processing active, explicit state-local origins, paused silence,
+paused seek and resumed origin. The reviewed baseline failed eight checks.
+The fixed candidate passes all **34/34** on both warmed Dummy and rendered
+Windows WASAPI with Godot 4.6.3. The final addon CI contract/accessibility/package
+gate passes. Reports: `local-artifacts/scratch/validation/godot-origin/` files
+`review-before.log`, `review-after.log`, `review-rendered-wasapi-final.log`, and
+the sibling `godot-review-ci.log`. The missing-B warnings are expected fixture
+diagnostics. No physical-speaker, human-listening, frame-budget or exact-installed
+DAW claim follows from this result.

@@ -38,6 +38,9 @@ func _run() -> void:
 	for synchronized in [false, true]:
 		await _check_route(synchronized, true)
 		await _check_route(synchronized, false)
+		await _check_empty_selection(synchronized)
+		await _check_automatic_sections(synchronized)
+		await _check_state_pause_seek(synchronized)
 	AudioServer.remove_bus_effect(0, AudioServer.get_bus_effect_count(0) - 1)
 	await create_timer(0.1).timeout
 	scene_label.text = "Pocket Audio — prepared stem origins\nGodot %s · %s\n\n%s / %s scenarios passed\nSection-local / full-song · seek / repeated A/B\nSynchronized / per-layer players\n\nEngine-bus PCM capture; no human listening claim" % [Engine.get_version_info().get("string", ""), AudioServer.get_driver_name(), measurements.filter(func(item): return item.passed).size(), measurements.size()]
@@ -62,8 +65,10 @@ func _check_route(synchronized: bool, local: bool) -> void:
 	profile.sample_preview_enabled = false
 	profile.sample_preview_prewarm_on_ready = false
 	if local:
-		profile.set_section_stems("A", {"music": _tone(220.0, 2.0)})
-		profile.set_section_stems("B", {"music": _tone(660.0, 2.0)})
+		# Include a held tail so slow rendered test frames cannot consume the
+		# remainder of the file before a halfway-seek position can be inspected.
+		profile.set_section_stems("A", {"music": _tone(220.0, 4.0)})
+		profile.set_section_stems("B", {"music": _tone(660.0, 4.0)})
 	else:
 		profile.stem_paths = {"music": _tone(330.0, 8.0)}
 	var music = Conductor.new()
@@ -73,21 +78,22 @@ func _check_route(synchronized: bool, local: bool) -> void:
 	music.play()
 	music.set_process(false)
 	music.jump_to_section("B")
-	await _assert_position(music, 0.0 if local else 2.0, synchronized, local, "first-B")
+	await _assert_position(music, 0.0 if local else 2.0, synchronized, local, "first-B", 660.0 if local else 330.0)
 	music.seek_tick(2880)
-	await _assert_position(music, 1.0 if local else 3.0, synchronized, local, "seek-half-B")
+	await _assert_position(music, 1.0 if local else 3.0, synchronized, local, "seek-half-B", 660.0 if local else 330.0)
 	music.current_sequence.assign(["A", "B", "A", "B"])
 	music.call("_seek_to_sequence_index", 3)
-	await _assert_position(music, 0.0 if local else 6.0, synchronized, local, "repeated-B")
+	await _assert_position(music, 0.0 if local else 6.0, synchronized, local, "repeated-B", 660.0 if local else 330.0)
 	music.call("_seek_to_sequence_index", 2)
-	await _assert_position(music, 0.0 if local else 4.0, synchronized, local, "repeated-A")
+	await _assert_position(music, 0.0 if local else 4.0, synchronized, local, "repeated-A", 220.0 if local else 330.0)
 	music.stop()
 	music.queue_free()
 	await process_frame
 
-func _assert_position(music: Node, expected: float, synchronized: bool, local: bool, scenario: String) -> void:
+func _assert_position(music: Node, expected: float, synchronized: bool, local: bool, scenario: String, expected_hz: float) -> void:
 	scene_label.text = "Prepared audio origin regression\n\n%s · synchronized=%s · section-local=%s\nExpected file origin: %.3f seconds\n\nGenerated PCM tones; engine-bus capture" % [scenario, synchronized, local, expected]
 	var started_usec := Time.get_ticks_usec()
+	await create_timer(0.2).timeout # Drain the previous player's queued output.
 	capture.clear_buffer()
 	await create_timer(0.2).timeout
 	var elapsed_seconds := float(Time.get_ticks_usec() - started_usec) / 1000000.0
@@ -97,10 +103,125 @@ func _assert_position(music: Node, expected: float, synchronized: bool, local: b
 	var peak := 0.0
 	for frame in samples:
 		peak = max(peak, abs(frame.x), abs(frame.y))
-	var ok := is_instance_valid(player) and player.playing and actual >= expected - 0.03 and actual < expected + elapsed_seconds + 0.35 and peak > 0.001
-	measurements.append({"synchronized": synchronized, "local": local, "scenario": scenario, "expected_seconds": expected, "actual_seconds": actual, "elapsed_seconds": elapsed_seconds, "playing": is_instance_valid(player) and player.playing, "captured_frames": samples.size(), "captured_peak": peak, "passed": ok})
+	var actual_hz := _captured_frequency(samples)
+	var tone_matches: bool = abs(actual_hz - expected_hz) < max(15.0, expected_hz * 0.05)
+	var ok: bool = is_instance_valid(player) and player.playing and actual >= expected - 0.03 and actual < expected + elapsed_seconds + 0.35 and peak > 0.001 and tone_matches
+	measurements.append({"synchronized": synchronized, "local": local, "scenario": scenario, "expected_seconds": expected, "actual_seconds": actual, "elapsed_seconds": elapsed_seconds, "expected_hz": expected_hz, "captured_hz": actual_hz, "playing": is_instance_valid(player) and player.playing, "captured_frames": samples.size(), "captured_peak": peak, "passed": ok})
 	if not ok:
 		errors.append("%s sync=%s local=%s expected=%s actual=%s" % [scenario, synchronized, local, expected, actual])
+
+func _captured_frequency(samples: PackedVector2Array) -> float:
+	if samples.size() < 2:
+		return 0.0
+	var crossings := 0
+	for i in range(1, samples.size()):
+		if samples[i - 1].x <= 0.0 and samples[i].x > 0.0:
+			crossings += 1
+	return float(crossings) * AudioServer.get_mix_rate() / float(samples.size())
+
+func _fixture_chart() -> Resource:
+	var chart = Chart.new()
+	chart.bpm = 120
+	chart.time_signature = 4
+	chart.arrangement.assign(["A", "B", "A", "B"])
+	for i in range(4):
+		chart.arrangement_positions.append({"id": chart.arrangement[i], "arrangement_index": i, "start_tick": i * 1920, "length_ticks": 1920, "bars": 1})
+	return chart
+
+func _fixture_profile(synchronized: bool) -> Resource:
+	var profile = Profile.new()
+	profile.use_audio_stream_synchronized = synchronized
+	profile.sample_preview_enabled = false
+	profile.sample_preview_prewarm_on_ready = false
+	return profile
+
+func _fixture_music(profile: Resource) -> Node:
+	var music = Conductor.new()
+	music.chart = _fixture_chart()
+	music.playback_profile = profile
+	root.add_child(music)
+	music.play()
+	music.set_process(false)
+	return music
+
+func _assert_silence(music: Node, synchronized: bool, scenario: String, require_empty := true) -> void:
+	await create_timer(0.25).timeout
+	capture.clear_buffer()
+	await create_timer(0.2).timeout
+	var samples := capture.get_buffer(capture.get_frames_available())
+	var peak := 0.0
+	for frame in samples:
+		peak = max(peak, abs(frame.x), abs(frame.y))
+	var ready: bool = music.call("_has_ready_stem_players")
+	var sync_player: AudioStreamPlayer = music.get("_stem_player")
+	var empty := not ready and (sync_player == null or sync_player.stream == null)
+	var ok := samples.size() > 0 and peak < 0.00001 and (empty or not require_empty)
+	measurements.append({"synchronized": synchronized, "scenario": scenario, "require_empty": require_empty, "ready_layers": ready, "captured_frames": samples.size(), "captured_peak": peak, "passed": ok})
+	if not ok:
+		errors.append("%s sync=%s stale_ready=%s peak=%s" % [scenario, synchronized, ready, peak])
+
+func _dispose_music(music: Node) -> void:
+	music.stop()
+	music.queue_free()
+	await process_frame
+
+func _check_empty_selection(synchronized: bool) -> void:
+	var profile = _fixture_profile(synchronized)
+	profile.set_section_stems("A", {"music": _tone(220.0, 8.0)})
+	var music = _fixture_music(profile)
+	await _assert_position(music, 0.0, synchronized, true, "nonempty-A", 220.0)
+	music.jump_to_section("B")
+	await _assert_silence(music, synchronized, "empty-B-after-jump")
+	music.jump_to_section("A")
+	music.seek_tick(1920)
+	await _assert_silence(music, synchronized, "empty-B-after-seek")
+	await _dispose_music(music)
+
+func _wait_for_occurrence(music: Node, index: int) -> bool:
+	var deadline := Time.get_ticks_msec() + 6000
+	while music.current_arrangement_index != index and Time.get_ticks_msec() < deadline:
+		await process_frame
+	return music.current_arrangement_index == index
+
+func _check_automatic_sections(synchronized: bool) -> void:
+	var profile = _fixture_profile(synchronized)
+	profile.set_section_stems("A", {"music": _tone(220.0, 2.0)})
+	profile.set_section_stems("B", {"music": _tone(660.0, 2.0)})
+	var music = _fixture_music(profile)
+	music.seek_tick(1680)
+	music.set_process(true)
+	var entered_b: bool = await _wait_for_occurrence(music, 1)
+	if not entered_b:
+		errors.append("Automatic first B transition timed out")
+	else:
+		await _assert_position(music, 0.0, synchronized, true, "automatic-B-processing-active", 660.0)
+	var entered_a: bool = await _wait_for_occurrence(music, 2)
+	if not entered_a:
+		errors.append("Automatic repeated A transition timed out")
+	else:
+		await _assert_position(music, 0.0, synchronized, true, "automatic-repeated-A-processing-active", 220.0)
+	await _dispose_music(music)
+
+func _check_state_pause_seek(synchronized: bool) -> void:
+	var profile = _fixture_profile(synchronized)
+	profile.state_stem_sets = {"camp": {"music": _tone(880.0, 4.0)}}
+	profile.state_stem_origin_ticks = {"camp": 1920}
+	var music = Conductor.new()
+	music.chart = _fixture_chart()
+	music.playback_profile = profile
+	music.current_music_state = "camp"
+	root.add_child(music)
+	music.play()
+	music.set_process(false)
+	music.seek_tick(2880)
+	await _assert_position(music, 1.0, synchronized, true, "explicit-state-origin", 880.0)
+	music.pause()
+	await _assert_silence(music, synchronized, "state-paused", false)
+	music.seek_tick(3360)
+	await _assert_silence(music, synchronized, "state-seek-while-paused", false)
+	music.resume()
+	await _assert_position(music, 1.5, synchronized, true, "state-resume-after-paused-seek", 880.0)
+	await _dispose_music(music)
 
 func _tone(hz: float, seconds: float) -> AudioStreamWAV:
 	var stream := AudioStreamWAV.new()

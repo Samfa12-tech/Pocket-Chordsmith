@@ -85,6 +85,7 @@ var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stem_layer_players := {}
 var _prepared_stem_origin_tick := 0
+var _native_stem_seek_pending := false
 var _stinger_player: AudioStreamPlayer
 var _stinger_playback: AudioStreamPlaybackPolyphonic
 var _polyphonic_players := {}
@@ -246,6 +247,7 @@ func stop() -> void:
 	_playing = false
 	_paused = false
 	current_tick = 0
+	_native_stem_seek_pending = false
 	_tick_float = 0.0
 	_event_cursor = 0
 	_audio_event_cursor = 0
@@ -265,6 +267,7 @@ func stop() -> void:
 
 func pause() -> void:
 	_paused = true
+	_set_native_stems_paused(true)
 
 
 func resume() -> void:
@@ -272,6 +275,10 @@ func resume() -> void:
 		_playing = true
 		_paused = false
 		_reset_wall_clock_anchor()
+		if _native_stem_seek_pending:
+			_start_native_stems_from_current_tick()
+		else:
+			_set_native_stems_paused(false)
 
 
 func seek_tick(tick: int, sync_stems := true) -> void:
@@ -2046,14 +2053,14 @@ func _prepare_stem_sync_for_current_state() -> void:
 	var stem_map: Dictionary = selection.get("stems", {})
 	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
 	if stem_map.is_empty():
-		_stop_layer_stem_players()
+		_stop_layer_stem_players(true)
 		_stem_player.stop()
 		_stem_player.stream = null
 		return
 	if not playback_profile.use_audio_stream_synchronized:
 		_prepare_layer_stem_players(stem_map)
 		return
-	_stop_layer_stem_players()
+	_stop_layer_stem_players(true)
 	var sync_stream := AudioStreamSynchronized.new()
 	var layers := stem_map.keys()
 	layers.sort()
@@ -2115,14 +2122,21 @@ func _start_native_stems_from_current_tick() -> void:
 		return
 	if playback_profile != null and playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
+	if _paused:
+		_native_stem_seek_pending = true
+		_set_native_stems_paused(true)
+		return
+	_native_stem_seek_pending = false
 	var offset_seconds: float = float(max(0, current_tick - _prepared_stem_origin_tick)) * float(chart.get_seconds_per_tick())
 	if _has_ready_stem_players():
 		for player_value in _stem_layer_players.values():
 			var player := player_value as AudioStreamPlayer
 			if is_instance_valid(player) and player.stream != null:
+				player.stream_paused = false
 				player.play(offset_seconds)
 		return
 	if _stem_player != null and _stem_player.stream != null:
+		_stem_player.stream_paused = false
 		_stem_player.play(offset_seconds)
 
 
@@ -2356,11 +2370,22 @@ func _stop_native_stems() -> void:
 	_stop_layer_stem_players()
 
 
-func _stop_layer_stem_players() -> void:
+func _stop_layer_stem_players(clear_streams := false) -> void:
 	for player_value in _stem_layer_players.values():
 		var player := player_value as AudioStreamPlayer
 		if is_instance_valid(player):
 			player.stop()
+			if clear_streams:
+				player.stream = null
+
+
+func _set_native_stems_paused(paused: bool) -> void:
+	if is_instance_valid(_stem_player):
+		_stem_player.stream_paused = paused
+	for player_value in _stem_layer_players.values():
+		var player := player_value as AudioStreamPlayer
+		if is_instance_valid(player):
+			player.stream_paused = paused
 
 
 func _has_ready_stem_players() -> bool:
@@ -2374,7 +2399,7 @@ func _has_ready_stem_players() -> bool:
 func _has_playing_stem_players() -> bool:
 	for player_value in _stem_layer_players.values():
 		var player := player_value as AudioStreamPlayer
-		if is_instance_valid(player) and player.playing:
+		if is_instance_valid(player) and player.playing and not player.stream_paused:
 			return true
 	return false
 
