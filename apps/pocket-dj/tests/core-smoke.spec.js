@@ -1,4 +1,112 @@
 import { expect, test } from "@playwright/test";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+async function requireLiveBrowserAudio(page) {
+  test.skip(!(await page.evaluate(() => typeof (window.AudioContext || window.webkitAudioContext) === "function")), "This browser binary has no real Web Audio context; live playback is not tested.");
+}
+
+test("Campfire import keeps its source identity and plays prepared full voicings without retriggering on mute", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  await requireLiveBrowserAudio(page);
+  const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarRegister:"low",guitarStrumMode:"up",sectionBars:{A:1},songSequence:["A"],progressionA:[0],guitarPatternA:["open"],future:{keep:true}};
+  await page.locator("#importText").fill(JSON.stringify(source));
+  await page.locator("#importBtn").click();
+  expect(await page.evaluate(() => session.deck.guitarTone)).toBe("campfire_acoustic");
+  expect(await page.evaluate(() => session.source.originalProject)).toEqual(source);
+  expect(await page.evaluate(() => state.playing)).toBe(false);
+  await page.evaluate(() => {
+    window.__djStarts=0;window.__djStops=0;
+    const start=AudioBufferSourceNode.prototype.start,stop=AudioBufferSourceNode.prototype.stop;
+    AudioBufferSourceNode.prototype.start=function(...args){window.__djStarts++;return start.apply(this,args);};
+    AudioBufferSourceNode.prototype.stop=function(...args){window.__djStops++;return stop.apply(this,args);};
+  });
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => pocketDjCampfireBank?.getDiagnostics().activeVoices || 0)).toBeGreaterThan(0);
+  const captured = await page.evaluate(() => ({events:pocketDjCampfirePlan.sections.get("A").events,entries:pocketDjCampfireBank.getDiagnostics().entries}));
+  expect(captured.entries).toBe(4);
+  expect(captured.events[0]).toMatchObject({midiNotes:[50,57,62,66],direction:"up",velocity:1,instrument:"campfire_acoustic"});
+  await page.evaluate(() => {window.__djCampfireBank=pocketDjCampfireBank;});
+  const mute = page.getByRole("button",{name:"Mute Guitar"});
+  const playingSources = await page.evaluate(() => ({starts:window.__djStarts,stops:window.__djStops}));
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  expect(await page.evaluate(() => ({starts:window.__djStarts,stops:window.__djStops}))).toEqual(playingSources);
+  expect(await page.evaluate(() => pocketDjCampfireBank === window.__djCampfireBank)).toBe(true);
+  await page.locator("#stopBtn").click();
+  await expect.poll(() => page.evaluate(() => pocketDjCampfireBank.getDiagnostics().activeVoices)).toBe(0);
+  await page.evaluate(() => {window.__djBuffers=0;const create=audioCtx.createBuffer.bind(audioCtx);audioCtx.createBuffer=(...args)=>{window.__djBuffers++;return create(...args);};});
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => state.playing)).toBe(true);
+  expect(await page.evaluate(() => ({same:pocketDjCampfireBank === window.__djCampfireBank,buffers:window.__djBuffers}))).toEqual({same:true,buffers:0});
+  const beforeRestart = await page.evaluate(() => ({starts:window.__djStarts,stops:window.__djStops}));
+  await page.locator("#restartBtn").click();
+  await expect.poll(() => page.evaluate(() => window.__djStarts)).toBeGreaterThan(beforeRestart.starts);
+  expect(await page.evaluate(() => window.__djStops)).toBeGreaterThan(beforeRestart.stops);
+  expect(await page.evaluate(() => ({same:pocketDjCampfireBank === window.__djCampfireBank,buffers:window.__djBuffers}))).toEqual({same:true,buffers:0});
+  await page.locator("#stopBtn").click();
+});
+
+test("Campfire missing prepared Core fails explicitly without amplifier fallback", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  await requireLiveBrowserAudio(page);
+  const source = {projectVersion:17,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPatternA:["open"],sectionBars:{A:1}};
+  await page.locator("#importText").fill(JSON.stringify(source));
+  await page.locator("#importBtn").click();
+  await page.evaluate(() => {loadPocketAudioCoreModule=async()=>({});window.__djAmpFallback=0;playGuitar=()=>{window.__djAmpFallback++;};});
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#statusText")).toContainText("Campfire Acoustic needs the current bundled Pocket Audio Core");
+  expect(await page.evaluate(() => ({playing:state.playing,legacy:window.__djAmpFallback,source:session.source.originalProject}))).toEqual({playing:false,legacy:0,source});
+});
+
+test("standalone Campfire strum and pick survives saved DJ sessions without changing the source grid", async ({ page }) => {
+  await page.goto(pathToFileURL(resolve(import.meta.dirname,"..","pocket_dj_v1g_core_bridge.html")).href);
+  await requireLiveBrowserAudio(page);
+  const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPerformanceA:"strum_pick",sectionBars:{A:4},songSequence:["A"],progressionA:[0,0,3,3],guitarPatternA:["scratch"],future:{keep:true}};
+  await page.locator("#importText").fill(JSON.stringify(source));
+  await page.locator("#importBtn").click();
+  expect(await page.evaluate(() => ({active:session.deck.guitarActive,playing:state.playing}))).toEqual({active:true,playing:false});
+  await page.locator("#saveBtn").click();
+  await page.reload();
+  await page.locator("#loadLastBtn").click();
+  expect(await page.evaluate(() => session.source.originalProject)).toEqual(source);
+  expect(await page.evaluate(() => state.playing)).toBe(false);
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => state.playing)).toBe(true);
+  const events = await page.evaluate(() => pocketDjCampfirePlan.sections.get("A").events);
+  expect(events).toHaveLength(12);
+  expect(events.filter(event=>event.midiNotes).map(event=>event.midiNotes)).toEqual([[50,57,62,66],[50,57,62,66],[55,59,62,67],[55,59,62,67]]);
+  expect(events[1]).toMatchObject({midi:78,velocity:0.4166666666666667});
+  expect(await page.evaluate(() => ({overflow:document.documentElement.scrollWidth > innerWidth,source:session.source.originalProject}))).toEqual({overflow:false,source});
+  await page.locator("#stopBtn").click();
+});
+
+test("Campfire exact rich picks retain fractional timing and a cancelled cold Play cannot resume", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  await requireLiveBrowserAudio(page);
+  const events = [{tick:0,notes:[50,57,62,66],sound:"campfire_acoustic",velocity:100,direction:"up",technique:{campfire:{seed:123}}},{tick:123.5,note:78,instrument:"campfire_acoustic",velocity:0.4166666666666667,technique:{campfire:{seed:456}},future:{keep:true}}];
+  const source = {projectVersion:17,key:"D",bpm:76,resolution:4,timeSig:4,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{guitar:{events}}}}};
+  await page.locator("#importText").fill(JSON.stringify(source));
+  await page.locator("#importBtn").click();
+  expect(await page.evaluate(() => session.deck.guitarActive)).toBe(true);
+  await page.evaluate(() => {const load=loadPocketAudioCoreModule;window.__djGate=new Promise(resolve=>{window.__releaseDj=resolve;});loadPocketAudioCoreModule=async()=>{await window.__djGate;return load();};});
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => !!pocketDjCampfirePreparation)).toBe(true);
+  await page.locator("#stopBtn").click();
+  await page.evaluate(() => window.__releaseDj());
+  await expect.poll(() => page.evaluate(() => !!pocketDjCampfirePreparation)).toBe(false);
+  expect(await page.evaluate(() => ({playing:state.playing,bank:pocketDjCampfireBank}))).toEqual({playing:false,bank:null});
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => state.playing)).toBe(true);
+  const prepared = await page.evaluate(() => pocketDjCampfirePlan.sections.get("A").events);
+  expect(prepared[0]).toMatchObject({midiNotes:[50,57,62,66],direction:"up",technique:{campfire:{seed:123}}});
+  expect(prepared[1]).toMatchObject({midi:78,tick:123.5,velocity:0.4166666666666667,technique:{campfire:{seed:456}}});
+  expect(await page.evaluate(() => session.source.originalProject)).toEqual(source);
+  await page.evaluate(() => loadDemo());
+  expect(await page.evaluate(() => ({playing:state.playing,bank:pocketDjCampfireBank,plan:pocketDjCampfirePlan}))).toEqual({playing:false,bank:null,plan:null});
+});
 
 test("Pocket DJ exposes accessible import, live status, mixer, shortcut help, and modal focus", async ({ page }) => {
   await page.goto("/apps/pocket-dj/");

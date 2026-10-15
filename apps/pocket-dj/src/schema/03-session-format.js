@@ -159,6 +159,11 @@ function capabilityReportForProject(project){
       });
     });
   });
+  if(pocketDjProjectHasCampfire(project) && pocketAudioCoreModule?.createPocketAudioRendererCapabilityReport){
+    const normalized = pocketAudioCoreModule.normalisePocketChordsmithProject(project);
+    const report = pocketAudioCoreModule.createPocketAudioRendererCapabilityReport(normalized,{renderer:"live"});
+    report.losses.filter(loss => loss.feature.startsWith("campfire-")).forEach(addLoss);
+  }
   return {consumer:POCKET_DJ_CAPABILITIES.consumer,schemaVersions:POCKET_DJ_CAPABILITIES.schemaVersions.slice(),supportedFeatures:POCKET_DJ_CAPABILITIES.features.slice(),requestedFeatures,supportedProfiles:POCKET_DJ_CAPABILITIES.profiles.slice(),lossReport};
 }
 function negotiatePocketDjCapabilities(request={}){
@@ -307,6 +312,7 @@ function sanitizeSection(raw, project, id){
     bassSlide: fitArray(raw[sectionKey("bassSlide", id)], len, false, normalizeBool),
     bassAccent: fitArray(raw[sectionKey("bassAccent", id)], len, false, normalizeBool),
     guitarPattern,
+    guitarPerformance:safeChoice(raw[sectionKey("guitarPerformance",id)],["grid","strum_pick"],"grid"),
     tracks: cloneJson(richSource.tracks || {}),
     richTracks
   };
@@ -406,8 +412,8 @@ function sanitizePocketChordsmithProject(raw){
     chordOctave: clamp(asInt(raw.chordOctave,0),-1,1),
     melodyPitchMode: safeChoice(raw.melodyPitchMode,["scale","chromatic"],"scale"),
     bassMode: safeChoice(raw.bassMode,["auto","manual"],"auto"),
-    guitarEnabled: !!raw.guitarEnabled,
-    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
+    guitarEnabled: raw.guitarEnabled === undefined ? pocketDjProjectHasCampfire(raw) : !!raw.guitarEnabled,
+    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted","campfire_acoustic"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister,["low","mid","high"],"low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode,["down","up","alternate"],"down"),
     guitarVolume: clamp(asNum(raw.guitarVolume,.66),0,1),
@@ -427,7 +433,7 @@ function sanitizePocketChordsmithProject(raw){
   if(audioProfile === WESTERN_AUDIO_PROFILE_ID){
     project.chordInstrument = safeChoice(raw.chordInstrument,pocketChordInstrumentIds(),"saloon_piano");
     project.chordPlayMode = safeChoice(raw.chordPlayMode,["block","strum_up","strum_down","arp_up","arp_down"],"strum_up");
-    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang"],"western_twang");
+    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang","campfire_acoustic"],"western_twang");
   }
   if(audioProfile === FUNK_AUDIO_PROFILE_ID){
     project.bassTone = safeChoice(raw.bassTone,pocketBassToneIds(),"funk_finger_pocket");
@@ -447,7 +453,7 @@ function sanitizePocketChordsmithProject(raw){
 function createDjSessionFromChordsmithProject(project, originalProject=project?._originalProject || project){
   const activeIds = SECTION_IDS.filter(id => project.sections[id] && project.sections[id].active);
   const first = activeIds[0] || "A";
-  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern));
+  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern) || (project.guitarTone === "campfire_acoustic" && project.sections[id].guitarPerformance === "strum_pick") || pocketDjProjectHasCampfire({sections:{[id]:project.sections[id]}}));
   const sequence = sanitizeDjSequence(project.songSequence, project.sections);
   const sequenceStart = Math.max(0, sequence.indexOf(first));
   return {

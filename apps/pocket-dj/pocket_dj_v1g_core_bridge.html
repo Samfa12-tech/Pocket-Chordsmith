@@ -366,7 +366,7 @@ const POCKET_DJ_CAPABILITIES = Object.freeze({
   profiles:Object.keys(PROFILE_DEFAULT_PRESETS),
   articulations:SUPPORTED_ARTICULATIONS.slice(),
   drumLanes:SUPPORTED_DRUM_LANES.slice(),
-  techniques:{chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
+  techniques:{campfire:["recipeVersion","seed","strumSeconds","tailPolicy"],chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
 });
 const METAL_STYLE_PRESETS = ["metal_classic_chug","metal_thrashing_gallop","metal_doom_procession","metal_power_anthem","metal_boss_blast","metal_breakdown_gate"];
 const METAL_CHORD_INSTRUMENTS = ["metal_power_stack","dark_organ_stack"];
@@ -902,6 +902,11 @@ function capabilityReportForProject(project){
       });
     });
   });
+  if(pocketDjProjectHasCampfire(project) && pocketAudioCoreModule?.createPocketAudioRendererCapabilityReport){
+    const normalized = pocketAudioCoreModule.normalisePocketChordsmithProject(project);
+    const report = pocketAudioCoreModule.createPocketAudioRendererCapabilityReport(normalized,{renderer:"live"});
+    report.losses.filter(loss => loss.feature.startsWith("campfire-")).forEach(addLoss);
+  }
   return {consumer:POCKET_DJ_CAPABILITIES.consumer,schemaVersions:POCKET_DJ_CAPABILITIES.schemaVersions.slice(),supportedFeatures:POCKET_DJ_CAPABILITIES.features.slice(),requestedFeatures,supportedProfiles:POCKET_DJ_CAPABILITIES.profiles.slice(),lossReport};
 }
 function negotiatePocketDjCapabilities(request={}){
@@ -1050,6 +1055,7 @@ function sanitizeSection(raw, project, id){
     bassSlide: fitArray(raw[sectionKey("bassSlide", id)], len, false, normalizeBool),
     bassAccent: fitArray(raw[sectionKey("bassAccent", id)], len, false, normalizeBool),
     guitarPattern,
+    guitarPerformance:safeChoice(raw[sectionKey("guitarPerformance",id)],["grid","strum_pick"],"grid"),
     tracks: cloneJson(richSource.tracks || {}),
     richTracks
   };
@@ -1149,8 +1155,8 @@ function sanitizePocketChordsmithProject(raw){
     chordOctave: clamp(asInt(raw.chordOctave,0),-1,1),
     melodyPitchMode: safeChoice(raw.melodyPitchMode,["scale","chromatic"],"scale"),
     bassMode: safeChoice(raw.bassMode,["auto","manual"],"auto"),
-    guitarEnabled: !!raw.guitarEnabled,
-    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
+    guitarEnabled: raw.guitarEnabled === undefined ? pocketDjProjectHasCampfire(raw) : !!raw.guitarEnabled,
+    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted","campfire_acoustic"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister,["low","mid","high"],"low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode,["down","up","alternate"],"down"),
     guitarVolume: clamp(asNum(raw.guitarVolume,.66),0,1),
@@ -1170,7 +1176,7 @@ function sanitizePocketChordsmithProject(raw){
   if(audioProfile === WESTERN_AUDIO_PROFILE_ID){
     project.chordInstrument = safeChoice(raw.chordInstrument,pocketChordInstrumentIds(),"saloon_piano");
     project.chordPlayMode = safeChoice(raw.chordPlayMode,["block","strum_up","strum_down","arp_up","arp_down"],"strum_up");
-    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang"],"western_twang");
+    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang","campfire_acoustic"],"western_twang");
   }
   if(audioProfile === FUNK_AUDIO_PROFILE_ID){
     project.bassTone = safeChoice(raw.bassTone,pocketBassToneIds(),"funk_finger_pocket");
@@ -1190,7 +1196,7 @@ function sanitizePocketChordsmithProject(raw){
 function createDjSessionFromChordsmithProject(project, originalProject=project?._originalProject || project){
   const activeIds = SECTION_IDS.filter(id => project.sections[id] && project.sections[id].active);
   const first = activeIds[0] || "A";
-  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern));
+  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern) || (project.guitarTone === "campfire_acoustic" && project.sections[id].guitarPerformance === "strum_pick") || pocketDjProjectHasCampfire({sections:{[id]:project.sections[id]}}));
   const sequence = sanitizeDjSequence(project.songSequence, project.sections);
   const sequenceStart = Math.max(0, sequence.indexOf(first));
   return {
@@ -2016,6 +2022,93 @@ function applyMixerAndFx(){
 
 /* 6. Scheduler */
 
+let pocketDjCampfireBank = null;
+let pocketDjCampfirePlan = null;
+let pocketDjCampfirePreparation = null;
+let pocketDjPlaybackRequest = 0;
+
+function pocketDjProjectHasCampfire(project){
+  return project?.guitarTone === "campfire_acoustic" || Object.values(project?.sections || {}).some(section =>
+    Object.entries(section?.tracks || {}).some(([id,track]) => (id.startsWith("guitar") || track?.stem === "guitar") &&
+      track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
+}
+
+async function preparePocketDjCampfire(request, activeSession){
+  pocketDjCampfirePreparation?.abort();
+  const source = activeSession.source.originalProject || activeSession.source.project;
+  if(!pocketDjProjectHasCampfire(source)){
+    pocketDjCampfireBank?.dispose();
+    pocketDjCampfireBank = null;
+    pocketDjCampfirePlan = null;
+    return true;
+  }
+  if(pocketDjCampfirePlan?.session === activeSession && pocketDjCampfireBank) return true;
+  const controller = new AbortController();
+  pocketDjCampfirePreparation = controller;
+  let bank = null;
+  try{
+    const core = await loadPocketAudioCoreModule();
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession) return false;
+    if(typeof core.prepareCampfireAcousticNoteBank !== "function") throw new Error("Campfire Acoustic needs the current bundled Pocket Audio Core. Your song is unchanged.");
+    const input = {...source,bpm:activeSession.deck.bpm,key:activeSession.deck.key,scale:activeSession.deck.scale};
+    const project = core.normalisePocketChordsmithProject(input);
+    const sections = new Map();
+    const events = [];
+    const warnings = new Set();
+    for(const id of SECTION_IDS){
+      const timeline = core.buildPocketAudioTimeline(project,{scope:"section",sectionId:id});
+      const guitar = timeline.events.filter(event => event.type === "guitar");
+      const prepared = guitar.filter(event => event.instrument === "campfire_acoustic");
+      const owned = prepared.length > 0 || project.sections[id].guitar.tone === "campfire_acoustic";
+      if(owned && guitar.some(event => event.instrument !== "campfire_acoustic")) throw new Error("This section mixes Campfire and amplifier guitar. Separate the guitar parts before live DJ playback; the original source is preserved.");
+      const stepTimes = core.buildStepTimeline({stepCount:project.sections[id].bars * project.meta.timeSig * project.meta.resolution,...project.meta}).times;
+      const byStep = new Map();
+      for(const event of prepared){
+        const step = Math.floor(event.step);
+        if(!byStep.has(step)) byStep.set(step,[]);
+        byStep.get(step).push({event,offset:event.time - stepTimes[step]});
+        events.push(event);
+      }
+      sections.set(id,{owned,byStep,events:prepared});
+      timeline.lossReport.filter(loss => loss.feature?.startsWith("campfire-")).forEach(loss => warnings.add(loss.message));
+    }
+    bank = await core.prepareCampfireAcousticNoteBank(audioCtx,events,{destination:stemGains.guitar,signal:controller.signal});
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession){bank.dispose();return false;}
+    pocketDjCampfireBank?.dispose();
+    pocketDjCampfireBank = bank;
+    pocketDjCampfirePlan = {session:activeSession,sections,warnings:[...warnings]};
+    return true;
+  }catch(error){
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession){bank?.dispose();return false;}
+    throw error;
+  }finally{
+    if(pocketDjCampfirePreparation === controller) pocketDjCampfirePreparation = null;
+  }
+}
+
+function schedulePocketDjCampfireStep(section,step,time){
+  const prepared = pocketDjCampfirePlan?.sections.get(section.id);
+  if(!prepared?.owned) return false;
+  if(session.deck.guitarActive) for(const item of prepared.byStep.get(step) || []) pocketDjCampfireBank.schedule(item.event,time + item.offset);
+  return true;
+}
+
+function stopPocketDjCampfire(){
+  pocketDjPlaybackRequest++;
+  pocketDjCampfirePreparation?.abort();
+  pocketDjCampfirePreparation = null;
+  pocketDjCampfireBank?.stopAll();
+}
+
+function adoptPocketDjSession(nextSession){
+  if(state.playing) stopPlayback();
+  else stopPocketDjCampfire();
+  pocketDjCampfireBank?.dispose();
+  pocketDjCampfireBank = null;
+  pocketDjCampfirePlan = null;
+  session = nextSession;
+}
+
 function getSection(id=state.currentSection){ return session?.sections[id] || session?.sections.A; }
 function currentChord(section, step){
   const bar = Math.floor(step / stepsPerBar()) % MAX_BARS;
@@ -2241,9 +2334,10 @@ function scheduleStep(section, step, time){
       }
     });
   }
-  const hasRichGuitar = richTrackHasEvents(section,"guitar");
+  const hasPreparedGuitar = schedulePocketDjCampfireStep(section,step,time);
+  const hasRichGuitar = !hasPreparedGuitar && richTrackHasEvents(section,"guitar");
   if(hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar) scheduleRichGuitarEvents(section,step,time,richEventBudget);
-  if(!hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
+  if(!hasPreparedGuitar && !hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
     const art = section.guitarPattern[step];
     if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time + humanizeOffset(step,17), guitarStepDuration(section,step,art), art, step);
   }
@@ -2385,11 +2479,17 @@ function advanceStepAfterScheduling(section, step){
 /* 7. Section launcher */
 async function startPlayback(){
   if(!session) return showStatus("Load a project first.");
+  if(state.playing) pocketDjCampfireBank?.stopAll();
+  const request = ++pocketDjPlaybackRequest;
+  const activeSession = session;
   try{
-    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     await ensureAudio();
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(!(await preparePocketDjCampfire(request,activeSession))) return;
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume,.001 + audioCtx.currentTime,.018);
-  }catch(e){ showStatus("Audio needs one tap to start on this device. Press Play again."); return; }
+  }catch(e){ showStatus(e.message || "Audio needs one tap to start on this device. Press Play again."); return; }
   clearScheduler();
   state.playing = true;
   state.currentSection = session.performance.currentSection;
@@ -2402,9 +2502,10 @@ async function startPlayback(){
   applyMixerAndFx();
   schedulerId = setInterval(schedulerTick, SCHEDULER_MS);
   schedulerTick();
-  renderAll(); showStatus(`Playing section ${state.currentSection}`);
+  renderAll(); showStatus(`Playing section ${state.currentSection}${pocketDjCampfirePlan?.warnings.length ? ` · ${pocketDjCampfirePlan.warnings.join(" ")}` : ""}`);
 }
 function stopPlayback(){
+  stopPocketDjCampfire();
   callPocketAudioCore("stop");
   state.playing = false;
   clearScheduler();
@@ -3108,7 +3209,7 @@ async function handleImport(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(el.importText.value);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -3132,7 +3233,7 @@ async function consumeIncomingPocketDjHandoff(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(payload.code);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -3161,7 +3262,7 @@ function loadLocalSession(){
   try{
     const raw = localStorage.getItem(LOCAL_KEY);
     if(!raw) return showStatus("No saved Pocket DJ session yet.");
-    session = normalizePocketDjSession(JSON.parse(raw));
+    adoptPocketDjSession(normalizePocketDjSession(JSON.parse(raw)));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx(); session.performance.buildActive = false;
     primePocketAudioCore(session.source.project, "saved session source");
@@ -3170,7 +3271,7 @@ function loadLocalSession(){
 }
 function clearLocalSession(){
   try{ localStorage.removeItem(LOCAL_KEY); }catch(e){}
-  stopPlayback(); session = null; renderShell(); showStatus("Session cleared");
+  adoptPocketDjSession(null); renderShell(); showStatus("Session cleared");
 }
 
 /* 13. Demo data */
@@ -3427,25 +3528,25 @@ function makeMetalDemoProject(){
   return project;
 }
 function loadDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "demo");
   saveLocalSession(); renderAll(); showStatus("Demo deck loaded");
 }
 function loadLofiDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "lofi demo");
   saveLocalSession(); renderAll(); showStatus("Lofi DJ Demo loaded");
 }
 function loadChipDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "chip demo");
   saveLocalSession(); renderAll(); showStatus("Chip DJ Demo loaded");
 }
 function loadMetalDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "metal demo");
   saveLocalSession(); renderAll(); showStatus("Heavy Metal DJ Demo loaded");

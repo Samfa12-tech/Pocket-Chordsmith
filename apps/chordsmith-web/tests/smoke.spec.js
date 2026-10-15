@@ -220,13 +220,15 @@ test("exact imported Campfire chords and picked notes survive live preparation a
   await expect(page.locator("#playBtn")).toHaveText("Pause");
   const captured = await page.evaluate(async () => ({
     source:exportProject().sections.A.tracks.guitar.events,
-    prepared:chordsmithCampfirePlan.events.map(event=>({notes:event.midiNotes,midi:event.midi,technique:event.technique,direction:event.direction})),
+    prepared:chordsmithCampfirePlan.events.map(event=>({notes:event.midiNotes,midi:event.midi,tick:event.tick,time:event.time,technique:event.technique,direction:event.direction})),
     midi:await chordsmithCampfireMidiEvents([],MIDI_TICKS_PER_QUARTER,exportProject(),{scope:"section",sectionId:"A"})
   }));
   expect(captured.source).toMatchObject(events);
   expect(captured.prepared[0].notes).toEqual([50,57,62,66]);
   expect(captured.prepared[0].direction).toBe("up");
   expect(captured.prepared[1].midi).toBe(78);
+  expect(captured.prepared[1].tick).toBe(123.5);
+  expect(captured.prepared[1].time).toBe(123.5 / 480 * (60 / 76));
   expect(captured.prepared[1].technique.campfire.seed).toBe(456);
   expect(captured.midi.events.filter(event=>event.on).map(event=>event.note)).toEqual([66,62,57,50,78]);
   await page.locator("#stopBtn").click();

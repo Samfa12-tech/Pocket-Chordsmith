@@ -727,3 +727,43 @@ Approved PR88 themes are combined through a455475d4f661cfd2e2983d711edb0f69cfc8c
 blue default and saved choices remain. Local reviewed-source itch package built
 successfully, not uploaded. Candidate is for parent source review/CI, not release.
 Size1066549/1100000 active and894424/900000 modular. Main/owner checkout unchanged.
+
+## DJ prepared Campfire and shared precision integration candidate
+
+DJ now preserves imported campfire_acoustic rather than silently replacing it
+with high_gain. Its existing scheduler dispatches canonical Core note descriptors
+to the prepared PCM bank through the existing guitar mixer. Full voicings,
+up/down strums, exact picked rich notes and non-destructive strum/pick source
+performance work in actual desktop/touch browsers and standalone file URLs.
+Saved DJ sessions retain original PCS source data and do not autoplay. Session
+replacement/clear drops old prepared residency; Stop cancels cold preparation;
+stale completion cannot start playback. Explicit restart cancels old prepared
+sources but reuses PCM. Mute/unmute changes the existing bus without retriggering
+or stopping the sounding sources. An unavailable prepared Core fails visibly
+without amplifier fallback. Mixed amp/prepared same-section live playback remains
+explicitly unsupported. No new DJ timbre selector: this is the imported-song deck.
+
+A stronger DJ/producer probe found a shared precision gap after PR91: source JSON
+retained tick123.5, but Core normalized it to123. A Campfire instrument alias also
+fell back to an amplifier. Campfire-only normalization now retains fractional
+tick/durationTicks and maps that explicit alias; old instruments retain their
+existing normalization policy. Direct Core test and actual Chordsmith/DJ prepared
+tick/time assertions pass. Do not count PR91 alone as exact fractional playback
+acceptance; this stacked correction is needed. Original source/unknown fields
+remain unchanged. Canonical Chordsmith embedded Core artifacts regenerated.
+
+Passed: Core203; family parity including1173 DAW; Chordsmith producer8 desktop/
+touch; DJ26 desktop,4 additional touch and4 Firefox new workflows;6 required
+Firefox/WebKit baseline;6 scheduler tests;lint/type/format/size/freshness, local
+itch packaging and repo/security/governance gates. WebKit4 new live cases are
+SKIPPED because the Windows binary has no AudioContext, not audio passes. The
+renderer-unavailable check is explicit fault injection, not listening evidence.
+Current DJ size225078/300000. Exact DJ lockfile installed offline without script,
+manifest/lockfile or version changes. Raw identity/precision failures and passing
+logs: ignored local-artifacts/scratch/validation/pocket-dj-campfire-*.log.
+
+Local package prepared only, SHA256
+9485f696c4da7e9d47fb7a45e725d5ec95e84880855df1c3f114da4bcb33938f.
+Not published, not a final release installer/physical listening acceptance.
+Native DAW compact controls/performance, remaining DAW UX/finishing, both full
+Godot source/runtime routes and exact installed acceptance remain active.

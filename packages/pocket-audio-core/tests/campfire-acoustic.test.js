@@ -22,6 +22,22 @@ import {
 const reference = JSON.parse(readFileSync(new URL("./fixtures/campfire-reference-hashes.json", import.meta.url)));
 const eventReference = JSON.parse(readFileSync(new URL("./fixtures/campfire-event-reference-hashes.json", import.meta.url)));
 
+test("rich Campfire sound/instrument identity retains fractional ticks and authored metadata", () => {
+  for(const identity of [{sound:"campfire_acoustic"},{instrument:"campfire_acoustic"}]){
+    const source = {projectVersion:17,bpm:76,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{guitar:{events:[{...identity,tick:123.5,durationTicks:120.25,note:78,velocity:0.4166666666666667,technique:{campfire:{seed:456}},future:{keep:true}}]}}}}};
+    const before = JSON.stringify(source);
+    const project = normalisePocketChordsmithProject(source);
+    const event = buildPocketAudioTimeline(project).events.find(event=>event.type === "guitar");
+    assert.equal(event.instrument,"campfire_acoustic");
+    assert.equal(event.tick,123.5);
+    assert.equal(event.time,123.5 / 480 * (60 / 76));
+    assert.equal(event.durationTicks,120.25);
+    assert.equal(event.velocity,0.4166666666666667);
+    assert.deepEqual(project.sections.A.richTracks.guitar.events[0].future,{keep:true});
+    assert.equal(JSON.stringify(source),before);
+  }
+});
+
 test("compact Campfire authoring retains identity and complete D/G/Bm/A voicings without changing amplifier IDs", () => {
   assert.deepEqual(POCKET_PREPARED_GUITAR_TONES, ["campfire_acoustic"]);
   assert.equal(POCKET_GUITAR_TONES.length, 8, "prepared instruments must not acquire an amplifier fallback");

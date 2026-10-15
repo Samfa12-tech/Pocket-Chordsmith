@@ -82,7 +82,7 @@ async function handleImport(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(el.importText.value);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -106,7 +106,7 @@ async function consumeIncomingPocketDjHandoff(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(payload.code);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -135,7 +135,7 @@ function loadLocalSession(){
   try{
     const raw = localStorage.getItem(LOCAL_KEY);
     if(!raw) return showStatus("No saved Pocket DJ session yet.");
-    session = normalizePocketDjSession(JSON.parse(raw));
+    adoptPocketDjSession(normalizePocketDjSession(JSON.parse(raw)));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx(); session.performance.buildActive = false;
     primePocketAudioCore(session.source.project, "saved session source");
@@ -144,7 +144,7 @@ function loadLocalSession(){
 }
 function clearLocalSession(){
   try{ localStorage.removeItem(LOCAL_KEY); }catch(e){}
-  stopPlayback(); session = null; renderShell(); showStatus("Session cleared");
+  adoptPocketDjSession(null); renderShell(); showStatus("Session cleared");
 }
 
 /* 13. Demo data */
@@ -401,25 +401,25 @@ function makeMetalDemoProject(){
   return project;
 }
 function loadDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "demo");
   saveLocalSession(); renderAll(); showStatus("Demo deck loaded");
 }
 function loadLofiDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "lofi demo");
   saveLocalSession(); renderAll(); showStatus("Lofi DJ Demo loaded");
 }
 function loadChipDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "chip demo");
   saveLocalSession(); renderAll(); showStatus("Chip DJ Demo loaded");
 }
 function loadMetalDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "metal demo");
   saveLocalSession(); renderAll(); showStatus("Heavy Metal DJ Demo loaded");

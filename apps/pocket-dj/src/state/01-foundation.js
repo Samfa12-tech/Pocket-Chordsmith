@@ -84,7 +84,7 @@ const POCKET_DJ_CAPABILITIES = Object.freeze({
   profiles:Object.keys(PROFILE_DEFAULT_PRESETS),
   articulations:SUPPORTED_ARTICULATIONS.slice(),
   drumLanes:SUPPORTED_DRUM_LANES.slice(),
-  techniques:{chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
+  techniques:{campfire:["recipeVersion","seed","strumSeconds","tailPolicy"],chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
 });
 const METAL_STYLE_PRESETS = ["metal_classic_chug","metal_thrashing_gallop","metal_doom_procession","metal_power_anthem","metal_boss_blast","metal_breakdown_gate"];
 const METAL_CHORD_INSTRUMENTS = ["metal_power_stack","dark_organ_stack"];

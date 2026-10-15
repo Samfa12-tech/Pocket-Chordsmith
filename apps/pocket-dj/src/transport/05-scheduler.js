@@ -223,9 +223,10 @@ function scheduleStep(section, step, time){
       }
     });
   }
-  const hasRichGuitar = richTrackHasEvents(section,"guitar");
+  const hasPreparedGuitar = schedulePocketDjCampfireStep(section,step,time);
+  const hasRichGuitar = !hasPreparedGuitar && richTrackHasEvents(section,"guitar");
   if(hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar) scheduleRichGuitarEvents(section,step,time,richEventBudget);
-  if(!hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
+  if(!hasPreparedGuitar && !hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
     const art = section.guitarPattern[step];
     if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time + humanizeOffset(step,17), guitarStepDuration(section,step,art), art, step);
   }
@@ -367,11 +368,17 @@ function advanceStepAfterScheduling(section, step){
 /* 7. Section launcher */
 async function startPlayback(){
   if(!session) return showStatus("Load a project first.");
+  if(state.playing) pocketDjCampfireBank?.stopAll();
+  const request = ++pocketDjPlaybackRequest;
+  const activeSession = session;
   try{
-    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     await ensureAudio();
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(!(await preparePocketDjCampfire(request,activeSession))) return;
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume,.001 + audioCtx.currentTime,.018);
-  }catch(e){ showStatus("Audio needs one tap to start on this device. Press Play again."); return; }
+  }catch(e){ showStatus(e.message || "Audio needs one tap to start on this device. Press Play again."); return; }
   clearScheduler();
   state.playing = true;
   state.currentSection = session.performance.currentSection;
@@ -384,9 +391,10 @@ async function startPlayback(){
   applyMixerAndFx();
   schedulerId = setInterval(schedulerTick, SCHEDULER_MS);
   schedulerTick();
-  renderAll(); showStatus(`Playing section ${state.currentSection}`);
+  renderAll(); showStatus(`Playing section ${state.currentSection}${pocketDjCampfirePlan?.warnings.length ? ` · ${pocketDjCampfirePlan.warnings.join(" ")}` : ""}`);
 }
 function stopPlayback(){
+  stopPocketDjCampfire();
   callPocketAudioCore("stop");
   state.playing = false;
   clearScheduler();
