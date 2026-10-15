@@ -116,6 +116,7 @@ var _sample_preview_recent_native_fallbacks := []
 var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
+var _audio_prepare_generation := 0
 var _last_audio_prewarm_signature := ""
 var _warned_missing_stem_sections := {}
 var _native_bass_stream_cache := {}
@@ -145,6 +146,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_audio_prepare_generation += 1
 	_stop_polyphonic_streams()
 	_active_stinger_ids.clear()
 	_stinger_return_states.clear()
@@ -204,11 +206,13 @@ func _stop_polyphonic_streams() -> void:
 
 
 func set_playback_profile(profile: Resource, stop_active_samples := true) -> void:
+	_audio_prepare_generation += 1
 	if stop_active_samples:
 		_stop_polyphonic_streams()
 		_remove_sample_preview_pan_buses()
 	playback_profile = profile if profile != null else PlaybackProfile.new()
 	_audio_stream_cache.clear()
+	_last_audio_prewarm_signature = ""
 	_clear_native_preview_caches()
 	_last_playback_warning_signature = ""
 	_setup_native_audio_players()
@@ -567,6 +571,43 @@ func prewarm_sections(section_ids: Array) -> Dictionary:
 		if not section_id.is_empty():
 			out[section_id] = prewarm_section(section_id)
 	return out
+
+
+## Loading-scene preparation: yield between assets and never start playback.
+## One large file may still take time to decode; max_asset_load_us reports that
+## cost explicitly. This does not move raw WAV decoding to a background thread.
+func prewarm_sections_async(section_ids: Array) -> Dictionary:
+	var generation := _audio_prepare_generation
+	var profile := playback_profile
+	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": 0, "warnings": [], "max_asset_load_us": 0, "cached_streams": _audio_stream_cache.size()}
+	if profile == null or not is_inside_tree():
+		report.warnings.append("A playback profile and active loading scene are required for section preparation.")
+		return report
+	var values: Array = []
+	for section_value in section_ids:
+		var stem_map := _section_stem_map(str(section_value))
+		if stem_map.is_empty():
+			report.failed += 1
+			report.warnings.append("No prepared stems for section: %s" % str(section_value))
+		values.append_array(stem_map.values())
+	var seen := {}
+	for value in values:
+		# Give the caller a frame to display loading/cancellation before any I/O.
+		await get_tree().process_frame
+		if generation != _audio_prepare_generation or playback_profile != profile or not is_inside_tree():
+			report.cancelled = true
+			report.cached_streams = _audio_stream_cache.size()
+			return report
+		var started := Time.get_ticks_usec()
+		_prewarm_audio_value(value, seen, report, false, true)
+		report.max_asset_load_us = maxi(report.max_asset_load_us, Time.get_ticks_usec() - started)
+		report.cached_streams = _audio_stream_cache.size()
+	report.ok = report.failed == 0
+	return report
+
+
+func cancel_audio_prewarm() -> void:
+	_audio_prepare_generation += 1
 
 
 func get_missing_audio_assets() -> Array[String]:
@@ -2300,12 +2341,12 @@ func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 		return value
 	if value is String:
 		var path := str(value)
-		var file_path := ProjectSettings.globalize_path(path)
-		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
-			return null
 		var cache_key := _audio_cache_key(path, prefer_uncompressed_wav)
 		if _audio_stream_cache.has(cache_key):
 			return _audio_stream_cache[cache_key]
+		var file_path := ProjectSettings.globalize_path(path)
+		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
+			return null
 		var should_load_wav_directly: bool = path.get_extension().to_lower() == "wav" and (
 			(prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed)
 			or path.begins_with("user://")

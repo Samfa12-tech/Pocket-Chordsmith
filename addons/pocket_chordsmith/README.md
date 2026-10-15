@@ -133,6 +133,24 @@ Playback backends:
 - `HYBRID`: stems for the main bed plus event-triggered accents or stingers.
 - `PROCEDURAL_PREVIEW`: editor-oriented preview mode, not the default mobile runtime path.
 
+Prepare selected stems in a loading scene before starting gameplay:
+
+```gdscript
+var preparation = await conductor.prewarm_sections_async(["A", "B"])
+if preparation.ok:
+    conductor.play()
+```
+
+This helper yields between assets and never starts playback itself. Use
+`cancel_audio_prewarm()` when cancelling the loading screen; replacing the
+playback profile also cancels pending work, so an old request cannot refill the
+new profile's cache. Preparation reports `loaded`, `failed`, `cached_streams`,
+`cancelled` and `max_asset_load_us`. A single large file still decodes
+synchronously: inspect that measured cost and prepare it before gameplay. This
+is cooperative loading, not a background decoder or a per-frame time guarantee.
+The existing synchronous `prewarm_section(s)` and `prewarm_audio` APIs remain
+available for callers that already manage their loading phase.
+
 Adaptive music states:
 
 ```gdscript

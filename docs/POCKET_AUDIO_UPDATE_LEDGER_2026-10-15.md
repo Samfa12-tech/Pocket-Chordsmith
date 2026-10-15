@@ -841,3 +841,39 @@ Windows WebKit live-audio limitation remains. Mic is scoped omitted, not passed;
 retain Sam's hands-on check if final shared risk requires it. Core repo-only/no
 npm, no Reef Sweep/PR75/dependency merges. Remaining whole-family Godot runtime
 routes, layout/BeatStitch/finishing and exact installed acceptance remain active.
+
+## Godot prepared cache and loading-scene preparation (2026-10-16)
+
+Actual Godot4.6.3 reproduction found two residency failures: set_playback_profile
+cleared the stream cache but retained the old prewarm signature, so identical
+paths skipped reload; warm lookup checked disk before consulting resident PCM.
+Resetting the signature with cache invalidation and checking residency before I/O
+fix both. Explicit profile replacement still releases old resources; missing
+uncached files remain rejected. The failing probe is retained.
+
+The optional prewarm_sections_async loading-scene API reuses existing prepared
+stream machinery, yields between assets, deduplicates PCM, never starts playback,
+and returns explicit cancellation/failure/loaded/cache/max-asset-time diagnostics.
+Explicit cancel and profile replacement invalidate queued work before another
+asset load, preventing stale requests from filling a replacement cache. Existing
+synchronous APIs and playback behavior remain available. README gives the awaited
+loading-scene integration and states that each individual file still decodes
+synchronously: this is not background decoding or a frame-time guarantee.
+
+Tested: complete real Godot gate, including schema/trust/mix17/ending13/new
+residency8/section-origin engine-bus capture/editor accessibility and addon-only
+packaging135 entries, passed. Runtime probe checks exact192000-byte WAV PCM,
+cooperative frame yields, no autoplay, duplicate residency, explicit/profile
+cancellation, same-path profile reload, warm lookup after disk removal and stale
+resource release. One small-file diagnostic measured cold2022us, warm10us,
+maxasset1954us; not a general performance budget. CI-import package is temporary,
+not a published payload. Repo/security/governance/whitespace pass.
+
+Retained logs: local-artifacts/scratch/validation/godot-cache-residency-
+{before,after,cooperative,final}.log. Initial cooperative test expected three
+completed frames from three process_frame signals; Godot emits before increment,
+so actual completed-frame delta is two. Corrected assertion and reran full gate.
+No audio parity/listening claim follows from residency tests. Large-file cold
+load/working-set budgets, real prepared LOOP_KIT transitions, full authored-song
+Core/native two-source capture and exact installed/listening gates remain active.
+No source-engine recipes copied into the MIT addon and no licence/version changes.
