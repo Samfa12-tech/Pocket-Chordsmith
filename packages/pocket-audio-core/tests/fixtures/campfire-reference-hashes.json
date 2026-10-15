@@ -1,0 +1,67 @@
+{
+  "sourceUrl": "https://html-classic.itch.zone/html/19728457/index.html?v=1791866164",
+  "sourceSha256": "319940c4d35818117ed9ec070d64030315579798000b0f779c6246d6a76857ea",
+  "format": "mono-float32-le",
+  "records": [
+    {
+      "sampleRate": 44100,
+      "midi": 36,
+      "frames": 66150,
+      "sha256": "7ca3d019f75860aec0f03f50931da9fcdd187a772a948ba6f85f6ed4b190989d"
+    },
+    {
+      "sampleRate": 44100,
+      "midi": 50,
+      "frames": 66150,
+      "sha256": "343c264fc175252e825e9e03af890121a542d5eacef446d6778f2ab4b4242dfa"
+    },
+    {
+      "sampleRate": 44100,
+      "midi": 69,
+      "frames": 66150,
+      "sha256": "a412d35305a6bd3363c8be137855e6a102114dc5f4fb8bcb2f6ba3ea17bd5c74"
+    },
+    {
+      "sampleRate": 44100,
+      "midi": 84,
+      "frames": 66150,
+      "sha256": "0e1cb9470c5ba644f72e74086bc23b2e61f5dce6de6e49eb0739fa594c8902f4"
+    },
+    {
+      "sampleRate": 44100,
+      "midi": 96,
+      "frames": 66150,
+      "sha256": "711624d303857176b03e66e913c68f82f03bedd0d3a9ae62249bb3a2f09de8ee"
+    },
+    {
+      "sampleRate": 48000,
+      "midi": 36,
+      "frames": 72000,
+      "sha256": "00b50706a152fc14f086470df5670fdac743944e51b1711525842f4a0616bb0f"
+    },
+    {
+      "sampleRate": 48000,
+      "midi": 50,
+      "frames": 72000,
+      "sha256": "24c2daa96ba127c5fb2e123e02bec85a65ae3d9b243caec2eed39c4303145dd0"
+    },
+    {
+      "sampleRate": 48000,
+      "midi": 69,
+      "frames": 72000,
+      "sha256": "68a3c6cc5c7451bc305afa524069ce3307f4b5d6c04d5d0a455839bc95bf614c"
+    },
+    {
+      "sampleRate": 48000,
+      "midi": 84,
+      "frames": 72000,
+      "sha256": "81d1596a11c98ff227e7fb732250d6737af34d2da121d97eec1d08147357ded1"
+    },
+    {
+      "sampleRate": 48000,
+      "midi": 96,
+      "frames": 72000,
+      "sha256": "7976c3a05e86a38be9f3b08ce03d038e9965b6d4c0066755db47d8f2dea092a3"
+    }
+  ]
+}

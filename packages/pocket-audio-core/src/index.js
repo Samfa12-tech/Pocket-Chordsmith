@@ -7,6 +7,8 @@ export * from "./presets/funk.js";
 export * from "./presets/western.js";
 export * from "./sounds/drum-lanes.js";
 export * from "./sounds/guitar.js";
+export * from "./sounds/campfire-acoustic.js";
+export * from "./synth/campfire-acoustic.js";
 export * from "./sounds/instruments.js";
 export * from "./sounds/lofi-registry.js";
 export * from "./sounds/chip-registry.js";

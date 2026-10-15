@@ -72,7 +72,7 @@ hands-on check and continue independent work.
 
 | Area | Implementation/test status | Gate / next action |
 | --- | --- | --- |
-| Campfire Acoustic/Core | Pending | Freeze exact voicings/reference hashes and recipe; verify provenance before copying code, otherwise write original implementation. Deterministic PCM/rate/seed/gain/tail/cache contract first. |
+| Campfire Acoustic/Core | Original recipe/preparation API implemented and tested; existing engine integration pending | [Recipe 1 contract](CAMPFIRE_ACOUSTIC_CONTRACT_V1.md): exact voicings/reference hashes, deterministic PCM, bounded cache and explicit tails. No game code copied or licence changed. |
 | Chordsmith/DJ/native DAW Campfire | Pending | Real audible paths, full voicings/strums/picking and explicit fallback limits; preserve old IDs/PCS1/JSON. |
 | Both Godot export routes | Partial origin correction only | Chordsmith/Core and fully arranged native DAW audio need separate rendered reference, FX/automation/recording, captured playback and game-scene evidence. |
 | DAW layout/accessibility | Pending beyond sample search/meter slice | Reproduce ordering/overflow at named window sizes/scales; native popover/focus/recording acceptance. |
@@ -96,3 +96,30 @@ directory and Vite temporary-file rename were resolved using scoped approved
 execution; no uncertain external mutation remains. The missing Playwright
 browser was an environment prerequisite and is resolved. Remaining checks are
 pending work/acceptance, not asserted passes.
+
+## Second source candidate: Core Campfire foundation
+
+Stacked branch `codex/pocket-audio-campfire-20261015` starts at the reliability
+candidate `59f9c1e5ab3515f73af141c8e9d3bf3e15290584` (draft PR78). All PR78
+hosted checks are green, including Windows native, browser E2E, all family
+products, security/governance, Godot and both CodeQL languages. That CI status
+does not turn an uninstalled source candidate into installed listening evidence.
+
+Implemented: original Core integer-delay pluck recipe, exact D/G/Bm/A voicings,
+76 BPM strum/picking fixture, complete note identity, bounded mutation-safe LRU,
+explicit reference-cut/optional fade tails and a prepared AudioContext playback
+API with explicit start/cancel/Stop and no autoplay. Existing sound selectors,
+live engines, offline engines and native renderers are not yet wired to it.
+
+Tested: 10 reference dry PCM hashes at 44.1/48 kHz × MIDI 36/50/69/84/96;
+17 focused deterministic tests; all 168 Core tests; actual Chromium
+OfflineAudioContext produces the same 10 hashes at the requested onset and
+keeps cancelled future voices silent. Full required family-parity gate passes,
+including 1,170 DAW tests across 100 files. Reports are retained under ignored
+`local-artifacts/scratch/campfire-reference/`. Physical output and human
+listening are not inferred from OfflineAudioContext.
+
+Published: **nothing**. No Core npm release. Remaining: integrate the existing
+Core/browser/native/DJ paths, preserve portable source/intent, expose honest
+capabilities, validate both Godot source routes and full-mix gain/FX semantics,
+and complete listening/native acceptance before product release.
