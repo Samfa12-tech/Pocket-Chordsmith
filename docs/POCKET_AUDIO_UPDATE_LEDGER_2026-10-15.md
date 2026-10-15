@@ -496,6 +496,7 @@ selectors, full voicings/picking in the authoring apps, legacy fallback/DJ,
 installed/native and full two-source Godot acceptance remain pending. No physical
 output or listening claim follows from OfflineAudioContext.
 
+
 ## Ninth source candidate: native Campfire render window and tail frames
 
 Based on corrected Core mixer candidate 8179c736cd0f4b5039a63ea32282f74f7e858ce0.
@@ -685,3 +686,25 @@ slice is not full family acceptance. DJ/native controls, remaining DAW UX and
 finishing, both Godot source routes/runtime/scene checks and exact installed
 candidate/human output acceptance remain active. Capture plumbing unchanged:
 microphone omission remains scoped and is not a passed hands-on test.
+
+## Approved Chordsmith theme candidate
+
+Sam approved the three PR80 visual directions inside the existing theme system,
+with Chordsmith/Samfa12 blue as default. Branch
+`codex/chordsmith-existing-themes-20261016` follows corrected Core mixer PR86.
+Set List, Pedal Board and Tape Notes extend the existing selector, sanitizer and
+applyTheme path; old IDs/default, saved choices and song/editor data remain.
+Actual palette, control and typography integration covers the full editor,
+Settings, fixed transport and tooltips without a second editor/theme manager.
+
+Executed: 104 existing desktop/touch smoke cases plus two new persistent
+save/load/undo cases pass. All seven choices preserve non-theme exported song
+fields; new choices also survive autosave and JSON restoration. 32 actual
+Simple/Advanced layouts at 1440/720/375/360 have no page overflow or escaped
+transport. Eight screenshots inspected; three touch theme/save flows pass.
+Measured primary text tokens exceed 4.88:1 and control borders exceed 3.06:1.
+Source/freshness/type/format/size/organization/governance/whitespace gates pass.
+See docs/design/CHORDSMITH_THEME_INTEGRATION_2026-10-15.md for evidence and limits.
+Published: nothing. Physical phones/screen readers/scaling remain unclaimed.
+Audio routes, broader authoring controls and other family work remain active.
+

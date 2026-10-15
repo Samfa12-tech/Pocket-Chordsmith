@@ -1236,7 +1236,7 @@ function sanitizeProjectData(raw){
     drumKit: safeChoice(raw.drumKit, pocketDrumKitIds(), "classic"),
     drumGroovePreset: safeChoice(raw.drumGroovePreset, [...lofiDrumGroovePresetIds(), ...chipDrumGroovePresetIds(), ...metalDrumGroovePresetIds(), ...funkDrumGroovePresetIds()], ""),
     bassTone: safeChoice(raw.bassTone, pocketBassToneIds(), "classic"),
-    theme: safeChoice(raw.theme, ["night","ocean","forest","sunset"], "night"),
+    theme: safeChoice(raw.theme, ["night","ocean","forest","sunset","set_list","pedal_board","tape_notes"], "night"),
     uiMode: inferProjectUiMode(raw),
     chordType: safeChoice(raw.chordType, ["triad","seventh","sus2","sus4"], "triad"),
     chordInstrument: safeChoice(raw.chordInstrument, chordInstrumentIds(), "pocket"),
