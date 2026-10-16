@@ -473,6 +473,13 @@ test("selected-track proposal reaches both native render inputs and retains one 
   await expect(page.locator('[data-finish-focus="undo"]')).toBeEnabled();
   await page.locator('[data-finish-focus="undo"]').click();
   await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+  await expect(page.locator('[data-finish-focus="prepare"]')).toBeInViewport();
+  await page.keyboard.press("Control+y");
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeEnabled();
+  await expect(page.locator('[data-finish-focus="prepare"]')).toBeInViewport();
+  await page.keyboard.press("Control+z");
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+  await expect(page.locator('[data-finish-focus="prepare"]')).toBeInViewport();
 });
 
 test("Stop cancels native preparation and a late file cannot become an applicable proposal", async ({ page }) => {

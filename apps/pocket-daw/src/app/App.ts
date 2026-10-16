@@ -4428,8 +4428,8 @@ export class App {
       reason: "add-empty-midi-clip"
     });
     if (action === "audio-refresh") await this.refreshAudioDevices();
-    if (action === "undo") this.applyProjectState(undoCommand(this.state));
-    if (action === "redo") this.applyProjectState(redoCommand(this.state));
+    if (action === "undo") this.applyProjectState(undoCommand(this.state), { preserveScroll: true });
+    if (action === "redo") this.applyProjectState(redoCommand(this.state), { preserveScroll: true });
     if (action === "clip-left") this.applyProjectState(moveSelectedClipBySnap(this.state, -1));
     if (action === "clip-right") this.applyProjectState(moveSelectedClipBySnap(this.state, 1));
     if (action === "clip-duplicate") this.applyProjectState(duplicateSelectedClip(this.state));
@@ -4771,8 +4771,8 @@ export class App {
       this.state.zoom = this.clampTimelineZoom(this.state.zoom - 12);
       this.render({ preserveScroll: true });
     }
-    if (command === "undo") this.applyProjectState(undoCommand(this.state));
-    if (command === "redo") this.applyProjectState(redoCommand(this.state));
+    if (command === "undo") this.applyProjectState(undoCommand(this.state), { preserveScroll: true });
+    if (command === "redo") this.applyProjectState(redoCommand(this.state), { preserveScroll: true });
     if (command === "save-project") await this.saveProject(false);
     if (command === "open-file") await this.openProject();
     if (command === "export-wav") await this.exportWav();

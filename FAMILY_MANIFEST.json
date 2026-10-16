@@ -1,7 +1,7 @@
 {
   "$schema": "./docs/schemas/pocket-audio-family-manifest.schema.json",
   "manifestVersion": 1,
-  "updated": "2026-10-16",
+  "updated": "2026-10-17",
   "schemaPolicy": {
     "canonicalProjectSchema": 17,
     "legacyProjectionSchema": 16,
@@ -79,7 +79,7 @@
       "path": "apps/pocket-daw",
       "kind": "native-windows-app",
       "versions": {
-        "source": "0.6.53",
+        "source": "0.6.54",
         "projectSchema": "3",
         "latestPublished": "0.6.50",
         "lastInstalledSmoke": "0.6.50"
