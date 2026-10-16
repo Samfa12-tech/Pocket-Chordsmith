@@ -12,6 +12,7 @@ import { analyseFinishWav } from "../src/audio/finishAnalysis";
 import { decodePcmWavBytes } from "../../../packages/pocket-audio-core/src/export/wav.js";
 import { analyseAudioChannels } from "../../../packages/pocket-audio-core/src/export/audio-metrics.js";
 import type { PocketDawProject } from "../src/daw/schema";
+import { assertMonitorComparisonEvidence } from "./track-gain-comparison-evidence.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const argument = (name: string) => { const i = process.argv.indexOf(name); if (i < 0 || !process.argv[i + 1]) throw new Error(`Missing ${name}`); return resolve(process.argv[i + 1]); };
@@ -51,9 +52,12 @@ const renders = [source, proposed].map((project, index) => {
 const gains = finishMonitorGains(renders[0].measurements, renders[1].measurements);
 let pcmDifference = 0;
 for (let frame = 0; frame < frameCount; frame++) pcmDifference = Math.max(pcmDifference, Math.abs(renders[0].decoded.channels[0][frame] - renders[1].decoded.channels[0][frame]));
-if (!(pcmDifference > 1e-5)) throw new Error("Proposal has no measured PCM difference in the retained arrangement");
+if (!Number.isFinite(pcmDifference) || !(pcmDifference > 1e-5)) throw new Error("Proposal has no finite measured PCM difference in the retained arrangement");
 const matched = renders.map((render, index) => analyseAudioChannels({ ...render.decoded, channels: render.decoded.channels.map((channel: Float32Array) => channel.map(sample => sample * (index ? gains.bGain : gains.aGain))) }));
-if (Math.abs(matched[0].integratedLufs! - matched[1].integratedLufs!) > .02) throw new Error("Matched native passages differ in loudness");
+if (!matched.every(item => Number.isFinite(item.integratedLufs)) || Math.abs(matched[0].integratedLufs! - matched[1].integratedLufs!) > .02) throw new Error("Matched native passages lack finite comparable loudness");
+let matchedPcmDifference = 0;
+for (let channel = 0; channel < 2; channel++) for (let frame = 0; frame < frameCount; frame++) matchedPcmDifference = Math.max(matchedPcmDifference, Math.abs(renders[0].decoded.channels[channel][frame] * gains.aGain - renders[1].decoded.channels[channel][frame] * gains.bGain));
+if (!Number.isFinite(matchedPcmDifference)) throw new Error("Matched native PCM difference is non-finite");
 const switches = [{ frame: 12000, side: "b", sequence: 1 }, { frame: 12240, side: "a", sequence: 2 }, { frame: 48000, side: "b", sequence: 3 }];
 const ids = ["original", "proposed"];
 const capture = nativeRun("monitor", { durationSeconds: seconds, monitorCapture: true, switches, payload: { projectTitle: "Selected track gain comparison diagnostic", sampleRate: rate, startSeconds: 0, audition: { endSeconds: seconds }, monitorComparison: { aTrackId: ids[0], bTrackId: ids[1], aGain: gains.aGain, bGain: gains.bGain, side: "a" }, tracks: ids.map(id => ({ id, volume: 1, pan: 0, mute: false, solo: false })), events: [], fxChains: [], assets: renders.map((render, index) => ({ id: ids[index], name: ids[index]+".wav", sourcePath: render.file, sourceHash: render.sha256, sampleRate: rate, channels: 2, durationSeconds: seconds })), regions: ids.map(id => ({ id, assetId: id, trackId: id, startTime: 0, sourceOffset: 0, duration: seconds, gain: 1, pan: 0 })) } });
@@ -69,8 +73,8 @@ for (let frame = 0; frame < frameCount; frame++) {
   }
 }
 const clock = JSON.parse(readFileSync(join(directory, "monitor/render.json"), "utf8")).monitorProducerClockEvidence as Array<{ frame: number; renderedFrameCount: number; positionSeconds: number; generation: number }>;
-if (maxError > 1e-5 || clock.some(item => item.frame !== item.renderedFrameCount || Math.abs(item.positionSeconds - item.frame/rate) > 1/rate || item.generation !== 17)) throw new Error("Monitor differs from aligned crossfade/clock reference");
+assertMonitorComparisonEvidence({ maxError, squaredError, clock, switches, rate });
 if (JSON.stringify(source) !== before) throw new Error("Source project changed");
-const report = { passed: true, sourceSha256: hash(sourceBytes), nativeTestBinarySha256: hash(readFileSync(binary)), nativeSourceFiles: sourceIdentity.length, sourceIdentity, frames: frameCount, rate, seconds, expectedRatio, pcmDifference, gains, matchedLufs: matched.map(item => item.integratedLufs), maxError, rmsError: Math.sqrt(squaredError/(frameCount*2)), clock, sourceUnchanged: true, renders: renders.map(({name,file,sha256,measurements}) => ({name,file,sha256,measurements})), scope: "Retained unchanged native DSP test binary; new TypeScript track proposal. Generated arrangement/media/FX/automation fixture. Native offline/producer-clock PCM, not new installed 0.6.53 IPC, physical output or human listening." };
+const report = { passed: true, sourceSha256: hash(sourceBytes), nativeTestBinarySha256: hash(readFileSync(binary)), nativeSourceFiles: sourceIdentity.length, sourceIdentity, frames: frameCount, rate, seconds, expectedRatio, pcmDifference, matchedPcmDifference, gains, matchedLufs: matched.map(item => item.integratedLufs), maxError, rmsError: Math.sqrt(squaredError/(frameCount*2)), clock, sourceUnchanged: true, renders: renders.map(({name,file,sha256,measurements}) => ({name,file,sha256,measurements})), scope: "Retained unchanged native DSP test binary; new TypeScript track proposal. Generated arrangement/media/FX/automation fixture. Raw/matched PCM differences are mathematical measurements, not audibility. Native offline/producer-clock PCM, not new installed 0.6.53 IPC, physical output or human listening." };
 writeFileSync(join(directory, "summary.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify({ directory, passed: report.passed, frames: frameCount, pcmDifference, matchedLufs: report.matchedLufs, maxError, rmsError: report.rmsError, nativeSourceFiles: report.nativeSourceFiles }));

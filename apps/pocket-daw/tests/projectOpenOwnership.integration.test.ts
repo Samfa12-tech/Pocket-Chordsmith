@@ -8,6 +8,7 @@ import { discoverProjectRecoveryNative, openProjectFileNative } from "../src/nat
 import { loadAudioMediaNative } from "../src/native/mediaBridge";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
 import { clearAudioBufferCache, getCachedAudioBuffer } from "../src/audio/audioBufferCache";
+import { prepareFinishComparison } from "../src/audio/finishPreparation";
 
 vi.mock("../src/native/fileBridge", async (original) => ({
   ...await original<typeof import("../src/native/fileBridge")>(),
@@ -16,6 +17,7 @@ vi.mock("../src/native/fileBridge", async (original) => ({
 vi.mock("../src/native/mediaBridge", async (original) => ({
   ...await original<typeof import("../src/native/mediaBridge")>(), loadAudioMediaNative: vi.fn()
 }));
+vi.mock("../src/audio/finishPreparation", () => ({ prepareFinishComparison: vi.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (reason: Error) => void;
@@ -43,12 +45,29 @@ function host() {
   Object.assign(app, {
     state, projectFileOpen: new ProjectFileOpen(), recordingStartToken: 0,
     midiInputStartToken: 0, midiInputStartPending: false, midiInputRecordingRuntime: null,
-    engine: { isPlaying: () => true, stop: vi.fn(), setProject: vi.fn() },
+    engine: { isPlaying: () => true, stop: vi.fn(), setProject: vi.fn(), getTransportRevision: () => 0 },
     fileInput: { click: vi.fn() }, render: vi.fn(), stopLiveMetronome: vi.fn(),
     stopRecordingTimer: vi.fn(), saveAutosaveSnapshot: vi.fn(),
     syncArmedInputPreview: vi.fn(async () => {}), hydrateNativeCacheFromProject: vi.fn(async () => {})
   });
   return app;
+}
+function comparisonHost() {
+  const app = host(); let revision = 0;
+  currentProject(app.state).timeline.selection = { startBar: 1, endBar: 2, source: "manual" };
+  Object.assign(app, { finishActionToken: 0, finishContext: null, selectionAuditionToken: 0, selectionAuditionContext: null,
+    hydrateTimelineAudioBuffers: vi.fn(async () => ({})), assertNoMissingAudibleAudioBuffers: vi.fn(), updateLiveDom: vi.fn(), aiBridgeLiveStatus: () => ({ recording: {} }),
+    playTransport: vi.fn(async () => { revision++; app.state.playing = true; }) });
+  Object.assign(app.engine, { getTransportRevision: () => revision, seekToBar: vi.fn(),
+    isPlaying: () => app.state.playing, stop: vi.fn(() => { revision++; app.state.playing = false; }),
+    playPreparedComparison: vi.fn(async () => { revision++; app.state.playing = true; return true; }) });
+  app.state.finishComparison.presetId = "track_quieter";
+  return app;
+}
+function prepared(app: any) {
+  return { proposed: structuredClone(currentProject(app.state)), payload: { monitorComparison: {} },
+    a: { integratedLufs: -20, truePeakDbtp: -3 }, b: { integratedLufs: -20, truePeakDbtp: -3 },
+    gains: { aDb: 0, bDb: 0 }, warnings: [], dispose: vi.fn(async () => {}) } as any;
 }
 
 function stoppedHost() {
@@ -94,6 +113,63 @@ describe("actual App project-open/MIDI ownership", () => {
     vi.mocked(openProjectFileNative).mockResolvedValue(selection());
   });
   afterEach(() => { clearAudioBufferCache(); vi.unstubAllGlobals(); });
+
+  it("blocks Prepare, examples, A/B and Apply while actual MIDI permission is pending", async () => {
+    const permission = deferred<unknown>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: () => permission.promise });
+    const app = comparisonHost(), before = JSON.stringify(currentProject(app.state)); vi.mocked(prepareFinishComparison).mockResolvedValue(prepared(app));
+    const starting = app.startMidiInputRecording();
+    for (const action of ["finish-prepare", "finish-example-a", "finish-example-b", "finish-a", "finish-b", "finish-apply"]) await app.handleFinishAction(action);
+    const preparations = vi.mocked(prepareFinishComparison).mock.calls.length, starts = app.engine.playPreparedComparison.mock.calls.length;
+    permission.resolve(access(device)); await starting;
+    expect(preparations).toBe(0); expect(starts).toBe(0); expect(JSON.stringify(currentProject(app.state))).toBe(before);
+    expect(app.state.midiInputRecording.status).toBe("recording"); expect(typeof device.onmidimessage).toBe("function");
+  });
+
+  it("underlying MIDI start cancels an already playing example before installing its handler", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const app = comparisonHost(); vi.mocked(prepareFinishComparison).mockResolvedValue(prepared(app));
+    await app.handleFinishAction("finish-example-b"); expect(app.state.finishComparison.phase).toBe("playing");
+    await app.startMidiInputRecording();
+    expect(app.finishContext).toBeNull(); expect(app.state.finishComparison.phase).toBe("idle"); expect(app.state.midiInputRecording.status).toBe("recording");
+    expect(app.engine.playPreparedComparison).toHaveBeenCalledOnce(); expect(app.playTransport).toHaveBeenCalledOnce();
+  });
+
+  for (const action of ["midi_record_start", "midi_record_toggle"]) it(`actual bridge ${action} cancels comparison before deferred MIDI permission`, async () => {
+    const permission = deferred<unknown>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: () => permission.promise });
+    const app = comparisonHost(); vi.mocked(prepareFinishComparison).mockResolvedValue(prepared(app));
+    await app.handleFinishAction("finish-example-b"); const starting = app.handleAiBridgeControl({ action });
+    expect(app.finishContext).toBeNull(); expect(app.state.finishComparison.phase).toBe("idle"); expect(app.midiInputStartPending).toBe(true); expect(app.state.playing).toBe(false);
+    permission.resolve(access(device)); await starting; expect(app.state.midiInputRecording.status).toBe("recording"); expect(typeof device.onmidimessage).toBe("function");
+  });
+
+  it("MIDI start cancels a deferred example and disposes its late render without autoplay", async () => {
+    const render = deferred<any>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const app = comparisonHost(), result = prepared(app); vi.mocked(prepareFinishComparison).mockReturnValue(render.promise);
+    const hearing = app.handleFinishAction("finish-example-b"); await vi.waitFor(() => expect(prepareFinishComparison).toHaveBeenCalledOnce());
+    await app.startMidiInputRecording(); render.resolve(result); await hearing;
+    expect(result.dispose).toHaveBeenCalledOnce(); expect(app.engine.playPreparedComparison).not.toHaveBeenCalled(); expect(app.finishContext).toBeNull(); expect(app.state.midiInputRecording.status).toBe("recording");
+  });
+
+  it("cancelled MIDI permission cannot install a handler over a newer example", async () => {
+    const permission = deferred<unknown>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: () => permission.promise });
+    const app = comparisonHost(); vi.mocked(prepareFinishComparison).mockResolvedValue(prepared(app));
+    const starting = app.startMidiInputRecording(); await app.stopMidiInputRecording(); await app.handleFinishAction("finish-example-b"); permission.resolve(access(device)); await starting;
+    expect(device.onmidimessage).toBeNull(); expect(app.state.midiInputRecording.status).toBe("idle"); expect(app.state.finishComparison.phase).toBe("playing");
+  });
+
+  it("failed current MIDI permission releases pending UI ownership for a fresh comparison", async () => {
+    vi.stubGlobal("navigator", { requestMIDIAccess: async () => { throw new Error("permission declined"); } });
+    const app = comparisonHost(); await app.startMidiInputRecording(); expect(app.state.midiInputStartPending).toBe(false); expect(app.state.midiInputRecording.status).toBe("error");
+    vi.mocked(prepareFinishComparison).mockResolvedValue(prepared(app)); await app.handleFinishAction("finish-example-b"); expect(app.state.finishComparison.phase).toBe("playing");
+  });
+
+  it("Stop during example preparation then pending MIDI prevents either late example completion or Apply", async () => {
+    const render = deferred<any>(), permission = deferred<unknown>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: () => permission.promise });
+    const app = comparisonHost(), result = prepared(app); vi.mocked(prepareFinishComparison).mockReturnValue(render.promise);
+    const hearing = app.handleFinishAction("finish-example-b"); await vi.waitFor(() => expect(prepareFinishComparison).toHaveBeenCalledOnce());
+    await app.handleFinishAction("finish-stop"); const starting = app.startMidiInputRecording(); render.resolve(result); await hearing; await app.handleFinishAction("finish-apply"); permission.resolve(access(device)); await starting;
+    expect(app.engine.playPreparedComparison).not.toHaveBeenCalled(); expect(app.finishContext).toBeNull(); expect(app.state.midiInputRecording.status).toBe("recording");
+  });
 
   it("does not open a project while real MIDI startup awaits device access", async () => {
     const pending = deferred<unknown>(), device = input();

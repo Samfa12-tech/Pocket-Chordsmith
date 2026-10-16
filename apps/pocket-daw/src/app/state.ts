@@ -96,6 +96,7 @@ export interface AppState {
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
   midiInputRecording: MidiInputRecordingUiState;
+  midiInputStartPending: boolean;
   recordingPunchEnabled: boolean;
   recordingTakeMode: RecordingTakeMode;
   sampleLibrary: SampleLibraryIndex;
@@ -357,6 +358,7 @@ export function createInitialState(): AppState {
     },
     recording: createRecordingUiState(),
     midiInputRecording: createMidiInputRecordingUiState(),
+    midiInputStartPending: false,
     recordingPunchEnabled: false,
     recordingTakeMode: "replace",
     sampleLibrary: createEmptySampleLibraryIndex(),
@@ -458,6 +460,7 @@ export function loadProjectIntoState(
     chordsmithStepSelection: null,
     recording: createRecordingUiState(),
     midiInputRecording: createMidiInputRecordingUiState(),
+    midiInputStartPending: false,
     recordingPunchEnabled: state.recordingPunchEnabled,
     recordingTakeMode: state.recordingTakeMode
   };

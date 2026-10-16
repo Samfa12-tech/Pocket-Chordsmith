@@ -58,3 +58,44 @@ monitor maximum error was 3.38e-8, RMS 1.15e-9. This is actual native DSP eviden
 with a retained compatible binary, not a fresh 0.6.53 build, installed IPC test,
 physical-device output or listening acceptance. The script and unique local
 summary retain binary hashes and source comparisons for review.
+
+## Independent-review recording ownership correction
+
+The reviewed `a34be043fa2f13a021fc10c30ac18c270d5cdbdd` snapshot remains preserved.
+Deferred MIDI permission reproduced a comparison/recording overlap. Pending MIDI
+startup now participates in the shared recording-busy guard and visible Finish
+button states. Underlying MIDI/audio recording starts cancel owned comparison
+and selection audition before requesting capture; bridge start/toggle calls use
+the same methods. Current-start ownership rejects a later comparison, and
+cancelled permission/render completions cannot cross into a newer mode.
+Pending UI state clears on current failure as well as success/cancellation.
+
+Actual-App regressions exercise both orderings, deferred permission, actual
+bridge MIDI start/toggle, Stop and late preparation disposal. Native diagnostic
+validation now explicitly rejects non-finite error/clock values and absent clock
+evidence. It reports matched PCM difference separately; neither raw nor matched
+PCM difference proves human audibility.
+
+The recording-start correction changes semantic capture fingerprint from
+`e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770` to
+`e9da9acb8d6235a4f26f74f1c3601289d77c4125299cb345bb0fbf82956c8bce`.
+Old direct microphone acceptance is therefore ineligible for reuse. A corrected
+installer needs fresh recording acceptance; skipped or pending is not passed.
+
+The authorized preparation of the original review snapshot was stopped during
+source checks when review reported the blocker. No receipt or installer was
+created. Its interrupted evidence remains retained. No corrected installer is
+prepared before source re-review. Sam's installed unsaved session is untouched.
+
+Hosted counts for the original review head are separate from local expanded
+checks: CI38887273205 browser 60 passed/two skipped, comparison file 29 passed/two
+skipped, source 1,263, Windows-contract 321, Rust 223/five ignored; both CodeQL
+languages passed. These green jobs do not resolve the reproduced ownership bug.
+
+Corrected-source local checks passed 1,272 tests across 108 files, 328 Windows
+contract tests across 32 files, TypeScript and UI build. The strengthened native
+diagnostic retained identical error/clock results and measured matched PCM max
+difference 0.01137961. Its new negative unit controls reject NaN/Infinity and
+missing/empty/malformed clock evidence. Earlier source-gate failure correctly
+detected the changed capture fingerprint; the regression now explicitly asserts
+that old baseline is ineligible instead of changing fingerprint computation.

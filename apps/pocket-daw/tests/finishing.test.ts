@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { assertMonitorComparisonEvidence } from "../scripts/track-gain-comparison-evidence.mjs";
 import { createDemoProject } from "../src/demo/demoProject";
 import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
@@ -10,6 +11,11 @@ import { renderAppShell } from "../src/app/ui";
 const measurement = (lufs: number | null, peak = -3): FinishAudioMeasurements => ({ integratedLufs: lufs, truePeakDbtp: peak, nonFiniteSamples: 0, durationSeconds: 3, sampleRate: 48000, channelCount: 2 });
 
 describe("Finish proposals and monitor matching", () => {
+  it("rejects non-finite diagnostic errors and empty, missing or malformed clock evidence", () => {
+    const valid = { maxError: 1e-8, squaredError: 1e-9, rate: 48000, switches: [{ frame: 12000 }], clock: [{ frame: 12000, renderedFrameCount: 12000, positionSeconds: .25, generation: 17 }] };
+    expect(() => assertMonitorComparisonEvidence(valid)).not.toThrow();
+    for (const patch of [{ maxError: NaN }, { maxError: Infinity }, { squaredError: NaN }, { clock: [] }, { clock: null }, { clock: [{ ...valid.clock[0], positionSeconds: NaN }] }, { clock: [{ ...valid.clock[0], renderedFrameCount: 11999 }] }, { switches: [] }]) expect(() => assertMonitorComparisonEvidence({ ...valid, ...patch })).toThrow("finite aligned");
+  });
   it("previews selected-track gain without changing source, FX, automation or media and commits one Undo", () => {
     const source = createDemoProject();
     const track = source.tracks.find(item => item.trackType !== "master" && item.volume > 0)!;
@@ -35,6 +41,9 @@ describe("Finish proposals and monitor matching", () => {
     expect(html).toMatch(/data-action="finish-example-a"[^>]*disabled/);
     expect(html).toMatch(/data-action="finish-example-b"[^>]*disabled/);
     expect(html).toMatch(/data-action="finish-prepare"[^>]*disabled/);
+    state.recording.status = "idle"; state.midiInputStartPending = true;
+    const pending = renderAppShell(state);
+    for (const action of ["prepare", "example-a", "example-b", "a", "b", "apply"]) expect(pending).toMatch(new RegExp(`data-action="finish-${action}"[^>]*disabled`));
   });
   it("preserves source and user FX, replaces only managed slots, and bypasses reversibly", () => {
     let source = createDemoProject();

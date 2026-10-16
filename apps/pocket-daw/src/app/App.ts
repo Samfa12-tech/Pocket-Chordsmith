@@ -492,7 +492,8 @@ export class App {
   private recordingPunchOutStopRequested = false;
   private midiInputPunchOutStopRequested = false;
   private midiInputStartToken = 0;
-  private midiInputStartPending = false;
+  private get midiInputStartPending() { return this.state.midiInputStartPending; }
+  private set midiInputStartPending(value: boolean) { this.state.midiInputStartPending = value; }
   private transportBusyOwner: TransportBusyOwner | null = null;
   private inputPreviewKey: string | null = null;
   private midiInputRecordingRuntime: MidiInputRecordingRuntime | null = null;
@@ -4907,6 +4908,10 @@ export class App {
   }
 
   private async startRecording() {
+    if (this.midiInputStartPending || this.state.midiInputRecording.status === "recording") {
+      this.state.status = "Finish MIDI recording or cancel its pending start before audio recording.";
+      this.render({ preserveScroll: true }); return;
+    }
     const project = currentProject(this.state);
     if (!isNativeRecordingAvailable()) {
       this.state.status = "Live recording is only available in the installed Pocket DAW app.";
@@ -4946,6 +4951,8 @@ export class App {
       this.render({ preserveScroll: true });
       return;
     }
+    this.cancelFinishComparison("Comparison stopped by audio recording.");
+    this.cancelSelectionAudition("Audition stopped by audio recording.");
     this.recordingPunchOutStopRequested = false;
     const sessionId = this.recordingStartToken + 1;
     this.recordingStartToken = sessionId;
@@ -5138,12 +5145,15 @@ export class App {
       this.setMidiInputRecordingError("Move the playhead to or before the punch-in bar before recording MIDI input.");
       return;
     }
+    this.cancelFinishComparison("Comparison stopped by MIDI recording.");
+    this.cancelSelectionAudition("Audition stopped by MIDI recording.");
     const startToken = ++this.midiInputStartToken;
     this.midiInputStartPending = true;
     const ownsStart = () => startToken === this.midiInputStartToken
       && currentProject(this.state) === project
       && project.tracks.some(item => item.id === track.id && item.trackType === "midi")
-      && (this.state.recording.status === "idle" || this.state.recording.status === "error");
+      && (this.state.recording.status === "idle" || this.state.recording.status === "error")
+      && !this.finishContext && this.state.selectionAudition.phase === "idle";
     this.state.status = "Preparing MIDI input. Press MIDI Record again to cancel.";
     this.render({ preserveScroll: true });
     try {
@@ -5189,7 +5199,10 @@ export class App {
     } catch (error) {
       if (ownsStart()) this.setMidiInputRecordingError(error instanceof Error ? error.message : "Could not start MIDI input recording.");
     } finally {
-      if (startToken === this.midiInputStartToken) this.midiInputStartPending = false;
+      if (startToken === this.midiInputStartToken) {
+        this.midiInputStartPending = false;
+        this.render({ preserveScroll: true });
+      }
     }
   }
 
@@ -6650,7 +6663,7 @@ export class App {
   }
 
   private async openProject() {
-    const recordingBusy = () => this.midiInputStartPending || projectOpenRecordingBusy(this.state.recording.status, this.state.midiInputRecording.status);
+    const recordingBusy = () => this.recordingBusy();
     if (recordingBusy()) {
       this.state.status = "Stop recording before opening another project.";
       this.render();
@@ -7490,7 +7503,11 @@ export class App {
 
   private finishComparisonIsCurrent(): boolean {
     const context = this.finishContext;
-    return !!context && !context.controller.signal.aborted && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision() && (!context.trackId || context.trackId === this.state.selectedTrackId);
+    return !!context && !this.recordingBusy() && !context.controller.signal.aborted && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision() && (!context.trackId || context.trackId === this.state.selectedTrackId);
+  }
+
+  private recordingBusy(): boolean {
+    return this.midiInputStartPending || projectOpenRecordingBusy(this.state.recording.status, this.state.midiInputRecording.status);
   }
 
   private cancelFinishComparison(message: string) {
@@ -7519,7 +7536,7 @@ export class App {
       }
       this.render({ preserveScroll: true }); return;
     }
-    if (["preparing", "count-in", "recording", "stopping"].includes(this.state.recording.status) || this.state.midiInputRecording.status === "recording") {
+    if (this.recordingBusy()) {
       ui.message = "Finish recording before preparing, comparing or applying Finish.";
       this.render({ preserveScroll: true }); return;
     }
@@ -7617,7 +7634,7 @@ export class App {
   }
 
   private async playSelectionAudition() {
-    if (["preparing", "count-in", "recording", "stopping"].includes(this.state.recording.status) || this.state.midiInputRecording.status === "recording") {
+    if (this.recordingBusy()) {
       this.state.selectionAudition.message = "Finish recording before auditioning a selection.";
       this.render({ preserveScroll: true });
       return;

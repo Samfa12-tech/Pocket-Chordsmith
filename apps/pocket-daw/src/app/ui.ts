@@ -2884,7 +2884,7 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
 function renderFinishComparison(state: AppState): string {
   const finish = state.finishComparison;
   const available = finish.phase === "ready" || finish.phase === "playing";
-  const recording = ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+  const recording = state.midiInputStartPending || ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
   const preset = FINISH_PRESETS.find(item => item.id === finish.presetId)!;
   return `<section class="finish-comparison" aria-labelledby="finishHeading">
     <h3 id="finishHeading">Finish &amp; Compare</h3>
