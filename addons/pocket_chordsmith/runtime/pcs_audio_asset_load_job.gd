@@ -1,3 +1,4 @@
+@tool
 extends Node
 ## A short-lived loading-scene job owns and drains one threaded resource request.
 ## It lives under the scene root so freeing a conductor cannot abandon the job.

@@ -92,3 +92,51 @@ Representative game/load/unload, long-session/working-set, performance budgets,
 physical output and human listening remain open in
 [runtime acceptance](RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md). No version, licence,
 account, credential, dependency, capture-engine or public-payload change here.
+
+## Review correction: shared buses and the pre-I/O frame
+
+PR113 at `bd144f56ad906dc75388fe9929346f5d1634033f` is held. Independent engine
+review found two real lifecycle defects despite its passing 52 checks. The
+production FX hook clears prefixed shared-bus effects before checking whether
+sample preview is enabled. It ran during the audition conductor's initial ready,
+profile assignment and Play. The first asynchronous frame yield also had no
+owned cancellation signal before an asset-loading job existed; destroying the
+consumer there could strand its pending caller and resources.
+
+The editor-only conductor now suppresses both sample-FX and guitar-FX lifecycle
+hooks, including its initial default-profile ready. Existing routing still
+applies. It neither deletes effects nor recreates guessed settings afterwards.
+The new test reproduced nine shared-bus retention failures on the old conductor.
+It now retains effect instances, order, storage properties, enabled flags and
+bus send/volume/mute/solo/bypass across ready, profile, proven cold/warm Hear, Stop,
+source invalidation and exit/free, on Master/Music_Master/Music_FX/Music_Guitar.
+
+Preparation now owns a small root-attached cancellable frame wait before I/O,
+alongside the existing owned asset-loading jobs. Cancellation/profile/exit resolve
+that wait while the consumer still exists. Deterministic early-frame tests prove
+busy=true, zero asset jobs and one held frame wait, then verify Stop, detach, free
+and queue_free resolve the caller as cancelled and release both wait and consumer.
+A reentrant Stop from busy_changed also cancels before preparation. The frame and
+asset jobs are tool scripts so they execute in the actual editor as well as games.
+
+The corrected full Godot gate passes 82 audition checks, 23 existing asynchronous
+loading checks and 147 addon-only package entries. A separate actual EditorPlugin
+probe confirms editor_hint=true, two real threaded assets prepared, no autoplay,
+retained shared EQ identity/properties and removal of its audition consumer.
+Initial editor probes' green bodies with exit leaks were rejected. The final
+probe settles editor startup and exits outside its process-frame callback; it
+passes the unchanged error/leak guard. Its orphan Node StringName diagnostic is
+also present in the no-audition editor baseline, without an ObjectDB/resource leak.
+
+Fresh corrected-source rendered WASAPI captures remain in `captures-corrected`:
+all four UI/audio checks pass, both native modes compare all 216,000 reference
+frames at max1.647e-6/RMS2.93e-7, and manual/natural endings become silent. Raw
+leading-zero preparation/frame waits are .268042s and .801375s; last native
+positions6.9093/6.5253 for endpoint6.5 demonstrate frame granularity and unresolved
+performance budgets. These are not latency improvements, physical listening or
+representative-game acceptance.
+
+PR113 hosted CI38838189597 also failed one DJ async-import assertion and one DAW
+post-dialog focus assertion; CodeQL38838189603 passed. Their independent controlled
+diagnosis is preserved separately. This Godot correction does not clear those
+browser gates or authorize publication of the original113 ZIP.

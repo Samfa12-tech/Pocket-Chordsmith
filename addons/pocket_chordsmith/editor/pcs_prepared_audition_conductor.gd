@@ -11,6 +11,18 @@ func _handle_end_of_chart() -> void:
 	pass
 
 
+# Prepared auditions route through existing user buses. Even a disabled sample
+# preview calls the production cleanup before its enabled check, so suppress
+# both lifecycle hooks from the initial _ready as well as profile/Play calls.
+# Never delete/recreate effects or attempt to reconstruct a shared bus mix.
+func _apply_sample_preview_fx_settings() -> void:
+	pass
+
+
+func _ensure_guitar_preview_effects() -> void:
+	pass
+
+
 func prepared_playback_progress() -> Dictionary:
 	var players: Array = _stem_layer_players.values() if _has_ready_stem_players() else [_stem_player]
 	var position := INF

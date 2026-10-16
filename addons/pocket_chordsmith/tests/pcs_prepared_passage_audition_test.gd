@@ -5,6 +5,7 @@ const Music := preload("res://addons/pocket_chordsmith/editor/pcs_prepared_audit
 const Chart := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
 const Profile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const LoadJob := preload("res://addons/pocket_chordsmith/runtime/pcs_audio_asset_load_job.gd")
+const FrameWait := preload("res://addons/pocket_chordsmith/runtime/pcs_audio_prepare_frame_wait.gd")
 
 class DelayedLoadJob:
 	extends LoadJob
@@ -35,6 +36,21 @@ class ClockAudition:
 	func _playback_progress() -> Dictionary:
 		return reported_progress if not reported_progress.is_empty() else super._playback_progress()
 
+class HeldFrameWait:
+	extends FrameWait
+	func _ready() -> void:
+		pass # Explicitly hold the pre-I/O frame until consumer cancellation.
+
+class HeldFrameMusic:
+	extends Music
+	func _create_audio_preparation_frame_wait() -> Node:
+		return HeldFrameWait.new()
+
+class HeldFrameAudition:
+	extends Audition
+	func _create_conductor() -> PocketChordsmithConductor:
+		return HeldFrameMusic.new()
+
 var failures: Array[String] = []
 var checks := 0
 var subject
@@ -42,6 +58,8 @@ var action := ""
 var held_jobs: Array[Node] = []
 var source_a := "res://prepared-audition-a.res"
 var source_b := "res://prepared-audition-b.res"
+var early_completed := false
+var early_result: Dictionary = {}
 
 
 func _init() -> void:
@@ -101,6 +119,8 @@ func _run() -> void:
 	await process_frame
 	await _native_route()
 	await _asset_guards()
+	await _shared_bus_retention()
+	await _early_frame_cancellation()
 	root.child_entered_tree.connect(_job_entered)
 	for mode in ["stop", "profile", "chart", "exit", "free"]:
 		action = mode
@@ -188,6 +208,136 @@ func _asset_guards() -> void:
 	subject.queue_free()
 	await process_frame
 	await process_frame
+
+
+func _shared_bus_retention() -> void:
+	var names := ["Master", "Music_Master", "Music_FX", "Music_Guitar"]
+	var owned_buses: Array[String] = []
+	var owned_effects: Array[AudioEffect] = []
+	for name in names:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0:
+			AudioServer.add_bus()
+			bus = AudioServer.get_bus_count() - 1
+			AudioServer.set_bus_name(bus, name)
+			AudioServer.set_bus_volume_db(bus, -4.25)
+			owned_buses.append(name)
+		var eq := AudioEffectEQ6.new()
+		eq.resource_name = "PocketChordsmith_UserRetained"
+		eq.set_band_gain_db(3, 2.75)
+		var reverb := AudioEffectReverb.new()
+		reverb.resource_name = "OtherUserRetained"
+		reverb.room_size = 0.72
+		reverb.wet = 0.17
+		var panner := AudioEffectPanner.new()
+		panner.resource_name = "PocketChordsmith_UserPanRetained"
+		panner.pan = 0.37
+		for effect in [eq, reverb, panner]:
+			AudioServer.add_bus_effect(bus, effect)
+			owned_effects.append(effect)
+		AudioServer.set_bus_effect_enabled(bus, AudioServer.get_bus_effect_count(bus) - 1, false)
+	var before := _bus_snapshot(names)
+	var music := Music.new()
+	root.add_child(music)
+	_check(_bus_snapshot(names) == before, "audition conductor initial ready retains shared bus effect identity/order/properties")
+	var profile := _profile()
+	profile.master_music_bus = "Music_Master"
+	profile.fx_bus = "Music_FX"
+	profile.guitar_bus = "Music_Guitar"
+	music.set_playback_profile(profile)
+	_check(_bus_snapshot(names) == before, "audition conductor profile assignment never cleans or adds shared bus effects")
+	music.queue_free()
+	await process_frame
+	await process_frame
+	_check(_bus_snapshot(names) == before, "audition conductor removal retains bus routing/settings/effects")
+	subject = Audition.new()
+	root.add_child(subject)
+	var chart := _chart()
+	for label in ["cold", "warm"]:
+		var result: Dictionary = await subject.begin(chart, profile, "A", "B", 1, 0.5)
+		_check(result.get("ok", false), "%s shared-bus prepared audition starts" % label)
+		_check(result.preparation.threaded_assets == (2 if label == "cold" else 0), "%s shared-bus preparation has proven cache state" % label)
+		_check(_bus_snapshot(names) == before, "%s Hear retains every shared bus effect and property" % label)
+		subject.stop()
+		_check(_bus_snapshot(names) == before, "%s Stop retains every shared bus effect and property" % label)
+	profile.emit_changed()
+	_check(_bus_snapshot(names) == before, "source invalidation never restores guessed bus settings")
+	subject.queue_free()
+	await process_frame
+	await process_frame
+	_check(_bus_snapshot(names) == before, "audition exit/free retains shared bus identity/order/settings")
+	# Remove only this test's resources/buses, without reconstructing a layout.
+	for name in names:
+		var bus := AudioServer.get_bus_index(name)
+		for index in range(AudioServer.get_bus_effect_count(bus) - 1, -1, -1):
+			if AudioServer.get_bus_effect(bus, index) in owned_effects:
+				AudioServer.remove_bus_effect(bus, index)
+	for name in owned_buses:
+		AudioServer.remove_bus(AudioServer.get_bus_index(name))
+
+
+func _bus_snapshot(names: Array) -> Array:
+	var rows: Array = []
+	for name in names:
+		var bus := AudioServer.get_bus_index(name)
+		var effects: Array = []
+		for index in range(AudioServer.get_bus_effect_count(bus)):
+			var effect := AudioServer.get_bus_effect(bus, index)
+			var properties: Dictionary = {}
+			for property in effect.get_property_list():
+				if int(property.usage) & PROPERTY_USAGE_STORAGE:
+					properties[property.name] = effect.get(property.name)
+			effects.append([effect.get_instance_id(), AudioServer.is_bus_effect_enabled(bus, index), properties.duplicate(true)])
+		rows.append([name, AudioServer.get_bus_send(bus), AudioServer.get_bus_volume_db(bus), AudioServer.is_bus_mute(bus), AudioServer.is_bus_solo(bus), AudioServer.is_bus_bypassing_effects(bus), effects])
+	return rows
+
+
+func _early_frame_cancellation() -> void:
+	for mode in ["stop", "exit", "free", "queue_free"]:
+		early_completed = false
+		early_result = {}
+		subject = HeldFrameAudition.new()
+		root.add_child(subject)
+		var weak := weakref(subject)
+		_begin_early(subject)
+		_check(subject.is_busy() and subject._music._pending_audio_load_jobs.is_empty() and subject._music._pending_audio_frame_waits.size() == 1, "%s holds first preparation frame before any asset job" % mode)
+		var wait_weak := weakref(subject._music._pending_audio_frame_waits[0])
+		match mode:
+			"stop": subject.stop()
+			"exit": root.remove_child(subject)
+			"free": subject.free()
+			"queue_free": subject.queue_free()
+		var deadline := Time.get_ticks_msec() + 1000
+		while not early_completed and Time.get_ticks_msec() < deadline:
+			await process_frame
+		_check(early_completed and early_result.get("cancelled", false) and not early_result.get("ok", false), "%s resolves the pending early-frame begin caller as cancelled" % mode)
+		await process_frame
+		await process_frame
+		_check(wait_weak.get_ref() == null, "%s releases the root-owned first-frame wait" % mode)
+		if mode in ["free", "queue_free"]:
+			_check(weak.get_ref() == null, "%s releases the early-frame consumer" % mode)
+		else:
+			_check(not subject.is_busy(), "%s cannot later autoplay the early-frame request" % mode)
+			subject.queue_free()
+		await process_frame
+		await process_frame
+	# A reentrant Stop from busy_changed must cancel before preparation starts.
+	subject = Audition.new()
+	root.add_child(subject)
+	subject.busy_changed.connect(func(busy: bool):
+		if busy:
+			subject.stop(false)
+	)
+	var result: Dictionary = await subject.begin(_chart(), _profile(), "A", "B", 1, 0.5)
+	_check(result.get("cancelled", false) and not subject.is_busy() and subject._music._pending_audio_frame_waits.is_empty(), "reentrant busy-listener Stop cancels before the first frame wait")
+	subject.queue_free()
+	await process_frame
+	await process_frame
+
+
+func _begin_early(owner) -> void:
+	early_result = await owner.begin(_chart(), _profile(), "A", "B", 1, 0.5)
+	early_completed = true
 
 
 func _job_entered(node: Node) -> void:

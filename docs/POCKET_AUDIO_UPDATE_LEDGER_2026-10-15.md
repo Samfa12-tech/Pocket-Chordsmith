@@ -1655,3 +1655,27 @@ Cold/rendered budgets stay FAILED; representative game/long-session/working-set,
 device and human listening remain open. All prior final installed/scaling/version/
 advisory and reviewed publication work stays active. No new installer or public
 upload, no version/dependency/capture/security/licence/account changes.
+
+## PR113 held; Godot bus and early-frame lifecycle correction
+
+Independent Godot4.6.3 review found shared prefixed effect deletion in initial
+ready/profile/Play and unresolved begin callers when destroyed in the first
+pre-I/O frame (zero asset jobs). Original113 source/ZIP remains held despite
+hosted52/23/146 Godot success; CI38838189597 failed DJ93pass1fail and DAW53pass1fail2skip.
+CodeQL38838189603 passed. Browser diagnosis is preserved at stash
+a0c56fb1cbf7817d80e069956a709e7ba16ee456; version work preserved47710f98db14a855b89a117d8dbd1324364ad566.
+
+Isolated Godot correction prevents all sample/guitar FX lifecycle hooks in the
+editor-only conductor, from initial ready onward; no delete-and-restore workaround.
+Nine old-head bus-retention failures reproduced. A root-owned cancellable first
+frame now resolves preparation before consumer destruction, before any asset I/O.
+Tool-enabled frame/asset jobs also prepare in the actual editor.
+Full gate82audition/23async/147addon files passes; tests retain shared effect
+identity/order/properties/enabled and bus settings across all lifecycle phases,
+plus controlled early Stop/detach/free/queue_free/caller completion and wait cleanup.
+Actual EditorPlugin hint=true/two-threaded-resource/shared-EQ/removal probe passes
+the unchanged guard after probe teardown correction; earlier exit-leak runs retained.
+Fresh rendered four-route UI/audio results and full216000frame native comparisons
+remain successful; .801375s raw wait and .4093s observed endpoint overshoot remain
+explicit failed-performance evidence, never device/listening acceptance.
+See prepared-audition report for details. No public release or new installer.

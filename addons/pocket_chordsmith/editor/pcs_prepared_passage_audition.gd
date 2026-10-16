@@ -89,8 +89,10 @@ func begin(chart: Resource, profile: Resource, from_section: String, to_section:
 	_plan = plan
 	_transitioned = bool(plan.native)
 	_preparing = true
-	busy_changed.emit(true)
 	var generation := _generation
+	busy_changed.emit(true)
+	if generation != _generation:
+		return {"ok": false, "cancelled": true}
 	range_changed.emit(str(plan.label))
 	status_changed.emit("Preparing existing audio. Stop cancels; no gameplay synthesis.")
 	var report: Dictionary = await _prepare(plan)

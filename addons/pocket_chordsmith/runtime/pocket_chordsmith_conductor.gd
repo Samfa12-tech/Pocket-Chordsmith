@@ -121,6 +121,7 @@ var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
 var _audio_prepare_generation := 0
 var _pending_audio_load_jobs: Array[Node] = []
+var _pending_audio_frame_waits: Array[Node] = []
 var _last_audio_prewarm_signature := ""
 var _warned_missing_stem_sections := {}
 var _native_bass_stream_cache := {}
@@ -614,7 +615,15 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 	var seen := {}
 	for value in values:
 		# Give the caller a frame to display loading/cancellation before any I/O.
-		await get_tree().process_frame
+		var frame_wait := _create_audio_preparation_frame_wait()
+		get_tree().root.add_child(frame_wait)
+		if generation != _audio_prepare_generation or not is_inside_tree():
+			frame_wait.detach_consumer()
+			report.cancelled = true
+			return report
+		_pending_audio_frame_waits.append(frame_wait)
+		await frame_wait.completed
+		_pending_audio_frame_waits.erase(frame_wait)
 		if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 			report.cancelled = true
 			report.cached_streams = _audio_stream_cache.size()
@@ -665,7 +674,16 @@ func _create_audio_asset_load_job(path: String) -> Node:
 	return job
 
 
+func _create_audio_preparation_frame_wait() -> Node:
+	return preload("res://addons/pocket_chordsmith/runtime/pcs_audio_prepare_frame_wait.gd").new()
+
+
 func _detach_audio_load_consumers() -> void:
+	var frame_waits := _pending_audio_frame_waits.duplicate()
+	_pending_audio_frame_waits.clear()
+	for frame_wait in frame_waits:
+		if is_instance_valid(frame_wait):
+			frame_wait.detach_consumer()
 	var jobs := _pending_audio_load_jobs.duplicate()
 	_pending_audio_load_jobs.clear()
 	for job in jobs:
