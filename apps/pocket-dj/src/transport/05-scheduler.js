@@ -450,10 +450,13 @@ function stopPlayback(options={}){
 }
 function restartPlayback(){
   if(!session) return;
+  const wasPlaying = state.playing;
+  if(djAudition) stopPlayback();
+  else if(!wasPlaying) stopPocketDjCampfire();
   session.performance.currentSection = state.currentSection;
   state.currentStepForSchedule = 0;
   state.currentStep = -1;
-  if(state.playing){ startPlayback(); }
+  if(wasPlaying){ startPlayback(); }
   else { renderAll(); showStatus("Restart ready"); }
 }
 function clearScheduler(){

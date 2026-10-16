@@ -1,5 +1,9 @@
 import {expect,test} from "@playwright/test";
 
+async function requireLiveBrowserAudio(page){
+  test.skip(!(await page.evaluate(()=>typeof(window.AudioContext||window.webkitAudioContext)==="function")),"This browser binary has no real Web Audio context; live Restart is not tested.");
+}
+
 async function openDeck(page,campfire=false){
   await page.goto("/apps/pocket-dj/");
   await page.locator("#importText").fill(JSON.stringify({projectVersion:17,key:"D",scale:"major",bpm:240,timeSig:4,resolution:4,
@@ -101,6 +105,59 @@ for(const id of ["stopBtn","playBtn"]){
     await page.locator(`#${id}`).click();
     expect(await page.evaluate(()=>({same:JSON.stringify(exportPocketDjSession(session))===window.__before,playing:state.playing,context:!!djAudition}))).toEqual({same:true,playing:false,context:false});
     await page.waitForTimeout(250);expect(await page.evaluate(()=>state.playing)).toBe(false);
+  });
+}
+
+for(const outcome of ["success","error"]){
+  test(`cold Restart invalidates audition preparation and ignores late ${outcome}`,async({page})=>{
+    await openDeck(page);
+    await requireLiveBrowserAudio(page);
+    await page.evaluate(outcome=>{
+      session.performance.fx.echo=.43;window.__restartSource=JSON.stringify(exportPocketDjSession(session));
+      preparePocketDjCampfire=()=>new Promise((resolve,reject)=>{window.__completeRestart=()=>outcome==="success"?resolve(true):reject(new Error("Obsolete audition error"));}).finally(()=>{window.__restartSettled=true;});
+    },outcome);
+    await page.locator("#hearDjBitBtn").click();await page.waitForFunction(()=>!!window.__completeRestart);
+    const beforeRequest=await page.evaluate(()=>pocketDjPlaybackRequest);
+    await page.locator("#restartBtn").click();
+    const restarted=await page.evaluate(()=>({request:pocketDjPlaybackRequest,context:!!djAudition,playing:state.playing,status:el.statusText.textContent}));
+    await page.evaluate(()=>window.__completeRestart());await page.waitForFunction(()=>window.__restartSettled===true);
+    await page.waitForTimeout(100);
+    const completed=await page.evaluate(()=>({playing:state.playing,context:!!djAudition,status:el.statusText.textContent,
+      same:JSON.stringify(exportPocketDjSession(session))===window.__restartSource}));
+    console.info("cold-restart-result",JSON.stringify({outcome,beforeRequest,restarted,completed}));
+    await page.evaluate(()=>stopPlayback());
+    expect(restarted.request).toBeGreaterThan(beforeRequest);expect(restarted.context).toBe(false);expect(restarted.playing).toBe(false);
+    expect(completed).toEqual({playing:false,context:false,status:"Restart ready",same:true});
+  });
+}
+
+test("active audition Restart explicitly starts ordinary section playback at step zero",async({page})=>{
+  await openDeck(page);await requireLiveBrowserAudio(page);
+  await page.locator("#hearDjBitBtn").click();await expect(page.locator("#djAuditionStatus")).toContainText("Playing");
+  await page.evaluate(()=>{
+    window.__restartFx=JSON.stringify(session.performance.fx);window.__restartSource=JSON.stringify(session.source);
+    window.__oldRestartRequest=pocketDjPlaybackRequest;window.__restartSteps=[];const original=scheduleStep;
+    scheduleStep=(section,step,time)=>{window.__restartSteps.push({step,request:pocketDjPlaybackRequest});original(section,step,time);};
+  });
+  await page.locator("#restartBtn").click();
+  await expect.poll(()=>page.evaluate(()=>window.__restartSteps.filter(x=>x.request>window.__oldRestartRequest).length)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>({playing:state.playing,context:!!djAudition,
+    first:window.__restartSteps.find(x=>x.request===pocketDjPlaybackRequest)?.step,
+    sameFx:JSON.stringify(session.performance.fx)===window.__restartFx,sameSource:JSON.stringify(session.source)===window.__restartSource}))).toEqual({playing:true,context:false,first:0,sameFx:true,sameSource:true});
+  await page.locator("#stopBtn").click();
+});
+
+for(const outcome of ["success","error"]){
+  test(`stopped ordinary Restart also cancels pending Play with late ${outcome}`,async({page})=>{
+    await openDeck(page);
+    await requireLiveBrowserAudio(page);
+    await page.evaluate(outcome=>{
+      preparePocketDjCampfire=()=>new Promise((resolve,reject)=>{window.__completeOrdinary=()=>outcome==="success"?resolve(true):reject(new Error("Obsolete ordinary error"));}).finally(()=>{window.__ordinarySettled=true;});
+    },outcome);
+    await page.locator("#playBtn").click();await page.waitForFunction(()=>!!window.__completeOrdinary);
+    await page.locator("#restartBtn").click();await page.evaluate(()=>window.__completeOrdinary());
+    await page.waitForFunction(()=>window.__ordinarySettled===true);await page.waitForTimeout(100);
+    expect(await page.evaluate(()=>({playing:state.playing,context:!!djAudition,status:el.statusText.textContent}))).toEqual({playing:false,context:false,status:"Restart ready"});
   });
 }
 

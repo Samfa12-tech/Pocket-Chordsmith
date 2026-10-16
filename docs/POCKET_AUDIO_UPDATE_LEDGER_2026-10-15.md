@@ -1586,3 +1586,33 @@ PR110 held-bass delta is independently source accepted at
 are now terminal success. Scoped Chordsmith jobs ran; unrelated components were
 intentionally skipped. This clears the reported PR109 source hold through the
 follow-up; the original head remains preserved.
+
+## DJ cold Restart correction
+
+PR11107d5c4880774008dc1dd1e42bcf135010d407797 remains held despite successful
+CI38833514477/CodeQL38833514508. Two controlled old-source browser cases fail:
+Restart ready retains request3/context; late success plays the stale selected
+passage and late error replaces the status. Deck/source identity stays unchanged.
+
+Restart now remembers whether playback was active, cancels audition through the
+existing preserving Stop path, invalidates stopped ordinary Play readiness, then
+resets position. Cold Restart remains ready; active Restart explicitly starts
+ordinary section playback at step0. Existing request ownership rejects both late
+outcomes. No engine, source format, dependency or capture code changed.
+
+Final full desktop/phone run94/94 passed, including40 contextual cases and10new
+cold audition/ordinary success-error plus active Restart cases. The initial full
+run92pass/2fail had a positive-control trace counting old audition steps before
+the click; final instrumentation tags requests and still strictly requires the
+new request to start step0. Those failures are retained. The earlier checkpoint's
+90expected count was an estimate; actual final count is94. Scheduler6, explicit
+source syntax, deterministic9, size232482/300000, repo/security/secrets/governance/
+whitespace pass. Firefox/WebKit focused follow-up is recorded separately; the
+Windows WebKit binary lacks Web Audio and live cases there are unavailable, not
+passed. Original PR111 ZIP/provenance copied to held artifact paths before repack.
+No physical speaker/listening, installed-native or publication acceptance.
+
+Godot editor WIP is safely retained at stash2cb062cf7f5ddf25e4afbe2aed29dd549cf58722:
+46 new deterministic checks and the full fail-closed gate/package145 passed.
+Rendered audio/UI and actual-player finite-ending follow-through remain pending;
+no Godot candidate PR/commit yet. Existing failed performance budgets stay failed.

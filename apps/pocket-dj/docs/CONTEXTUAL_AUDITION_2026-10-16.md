@@ -45,3 +45,32 @@ counted as passing. The final80-check run has no skips. Packaging/provenance,
 hosted review and publication are separate gates. Broader proposal A/B and
 Apply/Discard/Undo follow-through remains open; this slice introduces finite
 audition and actionable manual guidance.
+
+## Cold Restart review correction
+
+PR111 original head `07d5c4880774008dc1dd1e42bcf135010d407797` is held despite
+successful CI38833514477 and CodeQL38833514508. Restart was exempted from generic
+pre-control cancellation so active Restart could keep its normal meaning, but
+the original handler checked only `state.playing`. That flag is false while
+audition prepares, leaving its request alive after the UI said Restart ready.
+
+Two real-browser control regressions fail the preserved build: request3 remains3
+with its audition context still owned after Restart. Late success starts the old
+selected passage; late failure replaces Restart ready with an obsolete error.
+The deck/source remain unchanged, so source identity alone cannot reject this.
+
+The follow-up captures the prior playing state, cancels audition through its
+existing Stop path and invalidates stopped ordinary Play preparation. It then
+resets position. An active Restart explicitly starts ordinary section playback
+at step zero; a stopped/preparing Restart remains ready. Deck FX and source are
+preserved through audition cancellation. Existing request guards reject both
+late success and error.
+
+New tests cover both late outcomes, active Restart and ordinary cold Play on
+desktop and phone. The active test tags scheduled events by request, excluding
+old audition steps that can legitimately occur before the click. Early tests
+that counted those old steps failed and are retained; the step-zero assertion
+is still strict for the new request. WebKit's installed Windows binary has no
+Web Audio API, so live Restart checks there are unavailable, not passed.
+Final executed counts and review status are in the family ledger. The original
+PR111 ZIP and provenance are retained as held artifacts; no public upload occurred.
