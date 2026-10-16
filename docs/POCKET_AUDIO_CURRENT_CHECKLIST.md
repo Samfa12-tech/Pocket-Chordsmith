@@ -49,6 +49,22 @@ Chordsmith contextual audition WIP is safely stashed at
 b62bcdcf4b5de65201187a80eab167ad635f28e0 (16 local desktop/touch checks passed;
 unit runner temp-path failure is not a pass). Resume after integrating correction.
 
+PR107 exactf2ef0d382349de5a5c0e189192f96876af9c3471 hosted browser48passed/
+1failed/2skipped (CI38827765430). Godot segment independently source-accepted:
+hosted22clean/no script errors or leaks/package142 and CodeQL38827765437 both
+languages green. The residual DAW race is now causally reproduced by controlling
+the3500ms startup updater; captured checkForUpdates render stacks detach both
+Finish and unfinishedQC. A follow-up protects both automatic phases, retains
+available-update notifications/results and keeps explicit updater UI responsive.
+See apps/pocket-daw/docs/PASSIVE_READINESS_RENDERING_2026-10-16.md.
+Updater follow-up local fullbrowser56/56 (both long-workers included), DAW1235,
+typecheck/build/repo/security/governance/manifest/whitespace passed. Exact
+follow-up hosted/source review remains pending; prior failed head is preserved.
+Latest Chordsmith stashb056b6897daa86e8c76dce9a9986991770cf1be4 preserves138
+desktop/touch passes before final copy/naming cleanup; cleanup is not retested.
+Size now HTML1073923/1100000, modules899954/900000; budgets unchanged. Older
+stashes are retained. Unit4/lint/typecheck passed before cleanup.
+
 The capture fingerprint is unchanged; the source-level microphone omission is
 documented as omitted, not passed. If later shared/capture impact requires a
 physical check, reserve the required check for Sam this evening and continue

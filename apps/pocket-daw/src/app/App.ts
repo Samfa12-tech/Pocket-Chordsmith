@@ -657,7 +657,7 @@ export class App {
       this.state.sampleLibraryMessage = error instanceof Error ? `Sound Library could not load: ${error.message}` : "Sound Library could not load.";
     } finally {
       this.state.sampleLibraryLoading = false;
-      this.renderDiscoveryUpdate();
+      this.renderReadinessUpdate();
     }
   }
 
@@ -671,14 +671,24 @@ export class App {
     } catch (error) {
       this.state.sampleLibraryMessage = error instanceof Error ? `VST3 registry unavailable: ${error.message}` : "VST3 registry unavailable.";
     }
-    this.renderDiscoveryUpdate();
+    this.renderReadinessUpdate();
   }
 
-  private renderDiscoveryUpdate() {
+  private shouldDeferReadinessRender(): boolean {
+    return !this.state.showAddTrack && !this.state.showUpdaterPanel
+      && (this.state.lowerDockTab === "export-details" || this.state.showFilePanel);
+  }
+
+  private renderReadinessUpdate() {
     // Background readiness never changes the export controls. Keep their live
     // DOM (and uncommitted fields) until an intentional surface change renders
-    // the latest discovery state. An open Add Track picker still refreshes now.
-    if (!this.state.showAddTrack && (this.state.lowerDockTab === "export-details" || this.state.showFilePanel)) return;
+    // the latest state. Open Add Track and updater panels still refresh now.
+    if (this.shouldDeferReadinessRender()) {
+      const status = this.root.querySelector<HTMLElement>('[data-transport-status]');
+      if (status && status.textContent !== this.state.status) status.textContent = this.state.status;
+      if (status) status.title = this.state.status;
+      return;
+    }
     this.render({ preserveScroll: true });
   }
 
@@ -4552,11 +4562,15 @@ export class App {
 
   private async checkForUpdates(showPanel: boolean) {
     Object.assign(this.state, beginUpdaterCheck(this.state, showPanel));
-    this.render({ preserveScroll: true });
+    this.renderReadinessUpdate();
 
     const result = await checkForPocketDawUpdate();
-    Object.assign(this.state, applyUpdaterCheckResult(this.state, result, showPanel));
-    this.render({ preserveScroll: true });
+    const patch = applyUpdaterCheckResult(this.state, result, showPanel);
+    // Retain available-update state/notification, but do not replace an active
+    // export field or open a modal over its owner. Help opens the retained result.
+    if (!showPanel && this.shouldDeferReadinessRender()) patch.showUpdaterPanel = false;
+    Object.assign(this.state, patch);
+    this.renderReadinessUpdate();
   }
 
   private async downloadAndInstallUpdate() {

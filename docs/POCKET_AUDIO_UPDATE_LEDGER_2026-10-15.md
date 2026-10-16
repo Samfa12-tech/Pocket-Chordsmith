@@ -1458,3 +1458,37 @@ Nativecapturefingerprintunchanged. Fullbrowserbroadeningjustifiedbychangedglobal
 startup/discoveryUI, includinglibrary/narrowlayouts, notcount-onlyreruns.
 Earliermissingbrowserenvfailureandcorrected14targetrunretained; finalcleanrun
 supersedesitwithoutcallingunruncheckspassed. Source/exacthostedreviewpending.
+
+## Residual PR107 updater race: controlled timer proof
+
+PR107f2ef0d382349de5a5c0e189192f96876af9c3471 CI38827765430 browser48pass1fail
+2longskip; old1100x720reachabilitystilldetachedB. NewdiscoveryregressionsandQC
+passed. Godotsegmentindependentlysourceaccepted:hosted22clean/noSCRIPTERROR/leaks,
+package142/all26tooling,CodeQL38827765437bothgreen. WholePR107stillheldforDAW.
+
+Exactartifact12015468736 retained; traceupdaterpluginimportduringBscroll matches
+source3500msstartupcheck. Notassumption: controlledtimer/nativecheckhandshake old
+sourcefailsbothreadyFinishandunfinishedQC; captured App.checkForUpdates->render
+stacks androotcount11->12/8->9, oldnodesdetached. Existingcheckbegin/completion
+bypasseddiscoveryguard. Sourcefollowupreusesreadinessguardforbothupdaterphases,
+keepingstatefresh/controlsowned. Availableupdatepolitenoticeupdatesonlyexisting
+transportstatusnode, retainedHelpresultcanbeopenedwithoutaninterceptingmodal.
+Manual/openUpdaterandAddTrackpanelsstillrefresh. No checks/timer/preferences/
+nativecalls/endpoints/signing/install/releasechanges; no download/install testcalls.
+
+5targetcasespassed (Finish/QC xavailableyes/no +explicitpanelpositive);old2counter
+failures retained. FullDAW1235andtypecheck/buildpassed, broaderbrowserfinishing.
+Capturefingerprintunchanged; scopedmicomittedNOTpassed. No Core/Rust/Godot/audioPCM/
+installed/device/listeningrerunforUI-onlyfollowup. Fullfamilygatesremainactive.
+SeePASSIVE_READINESS_RENDERING_2026-10-16.md. No commit/publication yetatthisentry.
+
+ChordsmithWIP138desktop/touchbrowserpassed, unit4/lint/typecheckpassedwithcorrect
+TEMP; thenfinalshortercopy/internalnames/nativeSummarymarker/CItestinclusionnot
+retested. Stashb056b6897daa86e8c76dce9a9986991770cf1be4 retainsall; activeHTML1073923/
+1100000 andmodule899954/900000passwithoutraisingbudgets. Earlierb62/f3retained;
+no owner/concurrentworktouched. Resumefromupdatercorrectionbeforecandidate.
+
+Finalupdaterfollowup localfullbrowser56/56 inclbothlongworkersandfullDAW1235/1235
+passed; typecheck/build/repo/security/governance/manifest112/whitespacepass.
+Originalstrictreachability/unfinishedinputassertsunchanged. Exactnewhosted/source
+reviewpending; preserve107failedhead. No installed/update-service/hardware pass.

@@ -11,7 +11,7 @@ import { analyseAudioChannels } from "../../../../packages/pocket-audio-core/src
 
 test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
-async function fixture(page, pending = false, { cold = false, holdCold = false, downloadAudio = false, holdDelivery = false, holdDiscovery = false } = {}) {
+async function fixture(page, pending = false, { cold = false, holdCold = false, downloadAudio = false, holdDelivery = false, holdDiscovery = false, holdStartupUpdate = false } = {}) {
   let savedProject = null;
   if (cold) {
     const imported = addImportedAudioMedia(createDemoProject(), { name: "Saved guitar.wav", uri: "C:\\fixture\\saved-guitar.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 48000, channels: 1, sizeBytes: 96044, metadata: { mediaRefKind: "external" } });
@@ -21,7 +21,7 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
   }
   // Command/control fixture with generated PCM. This is never evidence of
   // installed native DSP, physical output or human listening.
-  await page.addInitScript(({ pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery }) => {
+  await page.addInitScript(({ pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery, holdStartupUpdate }) => {
     let next = 0;
     const files = new Map();
     window.__finishCalls = [];
@@ -30,12 +30,19 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
     window.__coldOpenCount = 0;
     window.__discoveryReplies = [];
     window.__discoveryRenderStacks = [];
-    if (holdDiscovery) {
+    if (holdDiscovery || holdStartupUpdate) {
       const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
       Object.defineProperty(Element.prototype, "innerHTML", { ...html, set(value) {
         if (this.id === "app" && window.__observeDiscovery) window.__discoveryRenderStacks.push(new Error().stack);
         html.set.call(this, value);
       }});
+    }
+    if (holdStartupUpdate) {
+      const timeout = window.setTimeout.bind(window);
+      window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 3500) { window.__fireStartupUpdate = () => callback(...args); return timeout(() => {}, 0); }
+        return timeout(callback, delay, ...args);
+      };
     }
     if (holdDelivery) {
       const ActualWorker = window.Worker;
@@ -55,6 +62,7 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
       transformCallback(callback) { const id = ++next; window[`_${id}`] = callback; return id; }, unregisterCallback(id) { delete window[`_${id}`]; },
       async invoke(command, args = {}) {
         window.__finishCalls.push([command, args]);
+        if (holdStartupUpdate && command === "plugin:updater|check") return new Promise(resolve => { window.__resolveStartupCheck = available => resolve(available ? { rid: 9001, currentVersion: "0.6.51", version: "99.99.99", body: "Control fixture only" } : null); });
         if (holdDiscovery && ["sample_library_starter_sounds", "vst3_beta_status"].includes(command)) return new Promise(resolve => window.__discoveryReplies.push(() => resolve(null)));
         if (command === "open_project_file" && savedProject) { window.__coldOpenCount++; return { contents: savedProject, path: "C:\\fixture\\cold-saved.pocketdaw", label: "cold-saved.pocketdaw" }; }
         if (command === "read_audio_media_file" && savedProject) {
@@ -110,7 +118,7 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
         return null;
       }
     };
-  }, { pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery });
+  }, { pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery, holdStartupUpdate });
 }
 
 async function releaseDiscovery(page) {
@@ -156,6 +164,62 @@ test("late startup discovery cannot replace ready Finish controls during reachab
   expect(result.connected && result.same && result.rendersBefore === result.rendersAfter).toBe(true);
   await page.locator('[data-finish-focus="b"]').scrollIntoViewIfNeeded();
   await expect(page.locator('[data-finish-focus="b"]')).toBeInViewport();
+});
+
+for (const surface of ["Finish", "QC input"]) for (const available of [false, true]) {
+  test(`automatic updater begin and completion preserve the live ${surface} surface (available=${available})`, async ({ page }, testInfo) => {
+    await fixture(page, false, { downloadAudio: true, holdDelivery: true, holdStartupUpdate: true }); await openFinish(page);
+    if (surface === "Finish") {
+      await page.locator('[data-action="finish-prepare"]').click();
+      await expect(page.locator(".finish-comparison [role=status]")).toContainText("Ready.", { timeout: 20000 });
+    } else {
+      await page.locator('.lower-dock-export [data-action="export-wav"]').click();
+      await page.waitForFunction(() => !!window.__releaseDelivery);
+    }
+    await page.evaluate(surface => {
+      window.__observedControl = document.querySelector(surface === "Finish" ? '[data-finish-focus="b"]' : '[data-export-profile-setting="full-song-wav:tailSeconds"]');
+      if (surface !== "Finish") { window.__observedControl.value = "0.25"; window.__observedControl.focus(); }
+      window.__qcRenderCount = document.querySelector("#app").dataset.renderCount;
+      window.__observeDiscovery = true;
+      window.__fireStartupUpdate();
+    }, surface);
+    await page.waitForFunction(() => !!window.__resolveStartupCheck);
+    const observe = () => page.evaluate(surface => ({ connected: window.__observedControl.isConnected,
+      focused: surface === "Finish" || document.activeElement === window.__observedControl,
+      value: surface === "Finish" || window.__observedControl.value === "0.25",
+      rendersBefore: window.__qcRenderCount, rendersAfter: document.querySelector("#app").dataset.renderCount, stacks: window.__discoveryRenderStacks }), surface);
+    const started = await observe();
+    await testInfo.attach("automatic-updater-start.json", { body: JSON.stringify(started, null, 2), contentType: "application/json" });
+    expect(started.connected && started.focused && started.value && started.rendersBefore === started.rendersAfter).toBe(true);
+    await page.evaluate(async available => { window.__resolveStartupCheck(available); await new Promise(resolve => setTimeout(resolve, 0)); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); }, available);
+    const finished = await observe();
+    await testInfo.attach("automatic-updater-finish.json", { body: JSON.stringify(finished, null, 2), contentType: "application/json" });
+    expect(finished.connected && finished.focused && finished.value && finished.rendersBefore === finished.rendersAfter).toBe(true);
+    await expect(page.locator(".updater-panel")).toHaveCount(0);
+    if (surface === "Finish") { await page.locator('[data-finish-focus="b"]').scrollIntoViewIfNeeded(); await expect(page.locator('[data-finish-focus="b"]')).toBeInViewport(); }
+    else { await page.evaluate(() => window.__releaseDelivery()); await expect(page.locator('[data-delivery-qc-host="dock"]')).toContainText("Check complete"); }
+    if (available) {
+      await expect(page.locator('[data-transport-status]')).toContainText("99.99.99 is available");
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Check for Updates", exact: true }).click();
+      await expect(page.locator(".updater-panel")).toContainText("99.99.99");
+      await expect(page.locator('[data-action="updater-download-install"]')).toBeEnabled();
+    }
+    expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
+  });
+}
+
+test("explicit updater checks still refresh their visible panel while Export is selected", async ({ page }) => {
+  await fixture(page, false, { holdStartupUpdate: true }); await openFinish(page);
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Check for Updates", exact: true }).click();
+  await page.locator('.updater-panel [data-action="updater-check"]').click();
+  await page.waitForFunction(() => !!window.__resolveStartupCheck);
+  await expect(page.locator(".updater-panel")).toContainText("Checking for updates");
+  await page.evaluate(() => window.__resolveStartupCheck(false));
+  await expect(page.locator(".updater-panel")).toContainText("latest available version");
+  await expect(page.locator('.updater-panel [data-action="updater-check"]')).toBeEnabled();
+  expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
 });
 
 async function openFinish(page) {
