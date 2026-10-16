@@ -12,6 +12,7 @@ const AudioBusTools := preload("res://addons/pocket_chordsmith/editor/pcs_audio_
 const SectionStemRenderer := preload("res://addons/pocket_chordsmith/editor/pcs_section_stem_renderer.gd")
 const ChartBuildTools := preload("res://addons/pocket_chordsmith/import/pcs_chart_build_tools.gd")
 const PushReceiver := preload("res://addons/pocket_chordsmith/editor/pcs_push_receiver.gd")
+const PreparedAudition := preload("res://addons/pocket_chordsmith/editor/pcs_prepared_passage_audition.gd")
 
 const POCKET_CHORDSMITH_URL := "https://samfa12.itch.io/pocket-chordsmith"
 const WEB_KIT_PROFILE_PATH := "res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres"
@@ -32,6 +33,8 @@ var _save_button: Button
 var _render_preview_audio_button: Button
 var _play_button: Button
 var _stop_button: Button
+var _receiver_toggle_button: Button
+var _receiver_token_button: Button
 var _timeline: PCSTimelineView
 var _section_list: PCSSectionList
 var _report: PCSImportReport
@@ -44,6 +47,16 @@ var _paste_dialog: ConfirmationDialog
 var _paste_text: TextEdit
 var _push_receiver: PCSPushReceiver
 var _drop_window: Window
+var _prepared_audition
+var _prepared_from: OptionButton
+var _prepared_to: OptionButton
+var _prepared_bar: SpinBox
+var _prepared_lead: OptionButton
+var _prepared_tail: OptionButton
+var _prepared_hear: Button
+var _prepared_stop: Button
+var _prepared_range: Label
+var _prepared_status: Label
 
 
 func set_editor_interface(value: EditorInterface) -> void:
@@ -60,11 +73,27 @@ func _ready() -> void:
 	conductor.section_started.connect(_on_preview_section)
 	conductor.event_triggered.connect(_on_preview_event)
 	add_child(conductor)
+	_prepared_audition = PreparedAudition.new()
+	add_child(_prepared_audition)
+	_prepared_audition.status_changed.connect(func(message: String):
+		_prepared_status.text = message
+	)
+	_prepared_audition.busy_changed.connect(func(busy: bool):
+		_prepared_stop.disabled = not busy
+		_prepared_hear.disabled = busy or chart == null
+	)
+	_prepared_audition.range_changed.connect(func(description: String): _prepared_range.text = description)
 	_assign_default_preview_profile(false)
 	_timeline.set_conductor(conductor)
-	_start_push_receiver()
+	_prepare_push_receiver()
 	_connect_file_drop_signal()
 	_update_actions()
+	_refresh_prepared_audition_options()
+	if editor_interface != null:
+		var filesystem := editor_interface.get_resource_filesystem()
+		filesystem.resources_reimporting.connect(_prepared_assets_changed)
+		filesystem.resources_reimported.connect(_prepared_assets_changed)
+		filesystem.resources_reload.connect(_prepared_assets_changed)
 
 
 func _process(_delta: float) -> void:
@@ -132,6 +161,20 @@ func _build_ui() -> void:
 		"Paste raw Pocket Chordsmith JSON, a PCS1 share code, or the code copied by Pocket Chordsmith's Push to Godot action.",
 		_open_paste_dialog
 	)
+
+	_receiver_toggle_button = _toolbar_button(
+		toolbar,
+		"Browser Receiver: Off",
+		"Explicitly enable the authenticated localhost receiver for direct browser Push to Godot.",
+		_toggle_push_receiver
+	)
+	_receiver_token_button = _toolbar_button(
+		toolbar,
+		"Copy Receiver Token",
+		"Copy the per-session token required by Pocket Chordsmith's direct browser push.",
+		_copy_push_receiver_token
+	)
+	_receiver_token_button.disabled = true
 
 	_toolbar_button(
 		toolbar,
@@ -212,6 +255,7 @@ func _build_ui() -> void:
 	_preview_diagnostics_label.text = "Preview diagnostics: idle"
 	_preview_diagnostics_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_preview_diagnostics_label)
+	_build_prepared_audition_controls(root)
 
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -474,6 +518,9 @@ func _render_preview_audio() -> void:
 	if chart == null:
 		_set_status("Import or load a chart before rendering preview audio.")
 		return
+	if not chart.native_timeline.is_empty():
+		_set_status("This DAW arrangement already contains rendered audio. Edit and render it in Pocket DAW, then import the updated pack.")
+		return
 	_stop_preview()
 	conductor.chart = chart
 	if not _assign_default_preview_profile(true):
@@ -683,16 +730,46 @@ func _compile_import_result(source_label: String) -> void:
 	_refresh_chart_views()
 
 
-func _start_push_receiver() -> void:
+func _prepare_push_receiver() -> void:
 	if _push_receiver != null:
 		return
 	_push_receiver = PushReceiver.new()
 	_push_receiver.name = "BrowserPushReceiver"
 	_push_receiver.import_callback = Callable(self, "_import_pushed_song")
 	add_child(_push_receiver)
+	_update_push_receiver_controls()
+
+
+func _toggle_push_receiver() -> void:
+	_prepare_push_receiver()
+	if _push_receiver.is_active():
+		_push_receiver.stop()
+		_update_push_receiver_controls()
+		_set_status("Browser Push to Godot receiver is off. Paste JSON/Code remains available.")
+		return
 	var error := _push_receiver.start()
 	if error != OK:
 		_set_status("Direct Push to Godot receiver unavailable on localhost:%d: %s" % [PCSPushReceiver.DEFAULT_PORT, error_string(error)])
+	_update_push_receiver_controls()
+	if error == OK:
+		_set_status("Browser receiver active on localhost:%d. Copy its per-session token into Pocket Chordsmith when prompted." % PCSPushReceiver.DEFAULT_PORT)
+
+
+func _copy_push_receiver_token() -> void:
+	if _push_receiver == null or not _push_receiver.is_active():
+		_set_status("Turn on Browser Receiver before copying its token.")
+		return
+	DisplayServer.clipboard_set(_push_receiver.get_session_token())
+	_set_status("Current Browser Receiver token copied. It changes whenever the receiver restarts.")
+
+
+func _update_push_receiver_controls() -> void:
+	var active := _push_receiver != null and _push_receiver.is_active()
+	if _receiver_toggle_button != null:
+		_receiver_toggle_button.text = "Browser Receiver: On" if active else "Browser Receiver: Off"
+		_receiver_toggle_button.tooltip_text = "Turn off the authenticated localhost receiver." if active else "Explicitly enable the authenticated localhost receiver for direct browser Push to Godot."
+	if _receiver_token_button != null:
+		_receiver_token_button.disabled = not active
 
 
 func _save_chart_resource(path: String) -> void:
@@ -733,7 +810,138 @@ func _open_demo_scene() -> void:
 	editor_interface.select_file(demo_path)
 
 
+func _build_prepared_audition_controls(root: VBoxContainer) -> void:
+	var disclosure := Button.new()
+	disclosure.text = "Prepared passage and listening cue (optional)"
+	disclosure.toggle_mode = true
+	disclosure.focus_mode = Control.FOCUS_ALL
+	disclosure.tooltip_text = "Open finite prepared-audio audition controls. Opening this does not play or edit anything."
+	root.add_child(disclosure)
+	var panel := VBoxContainer.new()
+	panel.visible = false
+	root.add_child(panel)
+	disclosure.toggled.connect(func(open: bool): panel.visible = open)
+	var choices := HFlowContainer.new()
+	panel.add_child(choices)
+	_prepared_from = _prepared_choice(choices, "From section")
+	_prepared_to = _prepared_choice(choices, "To section")
+	var bar_box := VBoxContainer.new()
+	choices.add_child(bar_box)
+	var bar_label := Label.new()
+	bar_label.text = "Native DAW bar"
+	bar_box.add_child(bar_label)
+	_prepared_bar = SpinBox.new()
+	_prepared_bar.min_value = 1
+	_prepared_bar.max_value = 1
+	_prepared_bar.step = 1
+	_prepared_bar.focus_mode = Control.FOCUS_ALL
+	_prepared_bar.tooltip_text = "Choose a bar in the fully arranged native DAW timeline. Adaptive remix is unavailable for this route."
+	bar_box.add_child(_prepared_bar)
+	_prepared_bar.value_changed.connect(func(_value: float): _prepared_options_changed())
+	_prepared_lead = _prepared_choice(choices, "Lead-in")
+	_prepared_lead.add_item("1 bar")
+	_prepared_lead.add_item("2 bars")
+	_prepared_tail = _prepared_choice(choices, "Tail allowance")
+	for seconds in [0.5, 1.0, 2.0]:
+		_prepared_tail.add_item("%.1f s" % seconds)
+		_prepared_tail.set_item_metadata(_prepared_tail.item_count - 1, seconds)
+	_prepared_tail.select(1)
+	var actions := HBoxContainer.new()
+	panel.add_child(actions)
+	_prepared_hear = Button.new()
+	_prepared_hear.text = "Hear this bit"
+	_prepared_hear.focus_mode = Control.FOCUS_ALL
+	_prepared_hear.tooltip_text = "Prepare the selected existing audio, then hear the visible finite passage. No synthesis, automatic analysis or source edits."
+	_prepared_hear.pressed.connect(_hear_prepared_passage)
+	actions.add_child(_prepared_hear)
+	_prepared_stop = Button.new()
+	_prepared_stop.text = "Stop audition"
+	_prepared_stop.focus_mode = Control.FOCUS_ALL
+	_prepared_stop.tooltip_text = "Cancel pending preparation or stop this prepared passage."
+	_prepared_stop.disabled = true
+	_prepared_stop.pressed.connect(_cancel_prepared_audition)
+	actions.add_child(_prepared_stop)
+	_prepared_range = Label.new()
+	_prepared_range.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(_prepared_range)
+	var cue := Label.new()
+	cue.text = "Listen for a gap, overlap or level change at the boundary. This is manual guidance, not an automatic finding. The transition uses the current prepared cut behavior; tails come from existing files. Edit source/mix settings manually, then hear again. Native DAW changes belong in DAW and need re-export."
+	cue.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(cue)
+	_prepared_status = Label.new()
+	_prepared_status.text = "Idle. Nothing plays automatically. Original resources stay unchanged."
+	_prepared_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(_prepared_status)
+
+
+func _prepared_choice(parent: Control, title: String) -> OptionButton:
+	var box := VBoxContainer.new()
+	parent.add_child(box)
+	var label := Label.new()
+	label.text = title
+	box.add_child(label)
+	var choice := OptionButton.new()
+	choice.tooltip_text = title
+	choice.focus_mode = Control.FOCUS_ALL
+	box.add_child(choice)
+	choice.item_selected.connect(func(_index: int): _prepared_options_changed())
+	return choice
+
+
+func _prepared_options_changed() -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop()
+	if chart == null or conductor == null:
+		_prepared_range.text = "Import a chart with prepared audio first."
+		return
+	if _prepared_audition == null:
+		return
+	var plan: Dictionary = _prepared_audition.describe(chart, conductor.playback_profile, _prepared_from.text, _prepared_to.text,
+		_prepared_lead.selected + 1, float(_prepared_tail.get_selected_metadata()), int(_prepared_bar.value))
+	_prepared_range.text = str(plan.get("error", plan.get("label", "")))
+
+
+func _refresh_prepared_audition_options() -> void:
+	if _prepared_from == null:
+		return
+	_prepared_from.clear()
+	_prepared_to.clear()
+	var native := chart != null and not chart.native_timeline.is_empty()
+	if chart != null:
+		for section_id in chart.section_library.keys():
+			_prepared_from.add_item(str(section_id))
+			_prepared_to.add_item(str(section_id))
+		if _prepared_to.item_count > 1:
+			_prepared_to.select(1)
+	_prepared_from.disabled = native or chart == null
+	_prepared_to.disabled = native or chart == null
+	_prepared_bar.editable = native
+	_prepared_bar.max_value = maxi(1, chart.native_timeline.get("bars", []).size()) if native else 1
+	_prepared_hear.disabled = chart == null
+	_prepared_options_changed()
+
+
+func _cancel_prepared_audition() -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop()
+
+
+func _prepared_assets_changed(_resources: PackedStringArray) -> void:
+	if _prepared_audition != null:
+		_prepared_audition.invalidate_assets()
+
+
+func _hear_prepared_passage() -> void:
+	if chart == null or conductor == null:
+		return
+	conductor.stop()
+	await _prepared_audition.begin(chart, conductor.playback_profile, _prepared_from.text, _prepared_to.text,
+		_prepared_lead.selected + 1, float(_prepared_tail.get_selected_metadata()), int(_prepared_bar.value))
+
+
 func _play_preview() -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop()
 	if chart == null:
 		_set_status("Import or load a chart before previewing.")
 		return
@@ -751,6 +959,8 @@ func _play_preview() -> void:
 
 
 func _stop_preview() -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop()
 	if conductor != null:
 		conductor.stop()
 	_update_position_label()
@@ -758,6 +968,8 @@ func _stop_preview() -> void:
 
 
 func _jump_preview_to_section(section_id: String) -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop()
 	if chart == null:
 		return
 	if not _conductor_is_playing():
@@ -767,6 +979,9 @@ func _jump_preview_to_section(section_id: String) -> void:
 
 
 func _refresh_chart_views() -> void:
+	if _prepared_audition != null:
+		_prepared_audition.stop(false)
+	_refresh_prepared_audition_options()
 	_update_actions()
 	_timeline.set_chart(chart)
 	_section_list.set_chart(chart)
@@ -782,7 +997,8 @@ func _update_actions() -> void:
 	if _save_button != null:
 		_save_button.disabled = not has_chart
 	if _render_preview_audio_button != null:
-		_render_preview_audio_button.disabled = not has_chart
+		_render_preview_audio_button.disabled = not has_chart or not chart.native_timeline.is_empty()
+		_render_preview_audio_button.tooltip_text = "DAW arrangements use their exported audio. Edit and render changes in Pocket DAW." if has_chart and not chart.native_timeline.is_empty() else "Render preview audio from compiled Chordsmith notes."
 	if _play_button != null:
 		_play_button.disabled = not has_chart
 	if _stop_button != null:
@@ -794,6 +1010,9 @@ func _update_summary() -> void:
 		return
 	if chart == null:
 		_summary_label.text = "No chart loaded."
+		return
+	if not chart.native_timeline.is_empty():
+		_summary_label.text = "Prepared DAW arrangement: %s bars, %.3f seconds including tails. Original DAW source retained; tempo/meter map and markers follow the arrangement." % [chart.native_timeline.bars.size(), chart.native_audio_duration_seconds]
 		return
 	_summary_label.text = "Chart: %s bpm, %s/4, %s %s, resolution %s, length %s ticks" % [
 		chart.bpm,

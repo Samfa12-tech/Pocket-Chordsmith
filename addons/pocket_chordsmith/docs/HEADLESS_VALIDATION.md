@@ -41,7 +41,7 @@ godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/validate_pocket_chordsmith_runtime.gd -- --chart <imported-chart.tres> --profile <imported-profile.tres> --report res://pocket_chordsmith_daw_pack_report.md
 ```
 
-The gate passes only when each command exits `0`, validation prints `OK`, and reports have no errors. The editor accessibility validator additionally prints that all 14 toolbar actions are named, explained, and `FOCUS_ALL`; it fails if a toolbar action loses keyboard focus, its visible name, or its tooltip. Warnings are acceptable only when they are expected for the selected playback profile, such as missing stems in a preview-only profile. The event trace exporter writes normalized compiled-event JSON so Godot imports can be compared against Chordsmith browser/core event traces without inspecting `.tres` resources by hand. The native preview validator generates representative bass, melody, guitar, and chord note streams so stream packing, slide handling, stereo melody output, rhythm-guitar synthesis, and chord voice synthesis fail deterministically instead of only during editor audition. When `--report` is provided, it also writes JSON per-event preview metrics such as track type, instrument, peak, RMS, roughness/brightness proxies, duration, sample count, and source flags; use that report to debug lane or instrument loudness differences against Chordsmith/core traces. The preview performance profiler measures full native prewarm cost, Play-button startup cost, and first preview process-frame cost so dense charts do not regress into editor freezes. The preview-audio renderer bakes text-only chart previews into visible WAV files and a generated stem profile; the default render path uses the fast sample kit, while `--prefer-native` is available only for deliberate slower experiments. The preview mix validator keeps the bundled sample preview dry by default: no automatic master/guitar/track-bus FX, no hidden bass ducking, and recommended buses unmuted/routed for Godot mixer control.
+The gate passes only when each command exits `0`, validation prints `OK`, and reports have no errors. The editor accessibility validator additionally prints that all 16 toolbar actions are named, explained, and `FOCUS_ALL`; it fails if a toolbar action loses keyboard focus, its visible name, or its tooltip. Warnings are acceptable only when they are expected for the selected playback profile, such as missing stems in a preview-only profile. The event trace exporter writes normalized compiled-event JSON so Godot imports can be compared against Chordsmith browser/core event traces without inspecting `.tres` resources by hand. The native preview validator generates representative bass, melody, guitar, and chord note streams so stream packing, slide handling, stereo melody output, rhythm-guitar synthesis, and chord voice synthesis fail deterministically instead of only during editor audition. When `--report` is provided, it also writes JSON per-event preview metrics such as track type, instrument, peak, RMS, roughness/brightness proxies, duration, sample count, and source flags; use that report to debug lane or instrument loudness differences against Chordsmith/core traces. The preview performance profiler measures full native prewarm cost, Play-button startup cost, and first preview process-frame cost so dense charts do not regress into editor freezes. The preview-audio renderer bakes text-only chart previews into visible WAV files and a generated stem profile; the default render path uses the fast sample kit, while `--prefer-native` is available only for deliberate slower experiments. The preview mix validator keeps the bundled sample preview dry by default: no automatic master/guitar/track-bus FX, no hidden bass ducking, and recommended buses unmuted/routed for Godot mixer control.
 
 Use `PERFORMANT_AUDIO_ROADMAP.md` when deciding whether a new audio feature belongs in import/render preparation or in runtime. The default answer should be: expensive synthesis and stem generation happen before gameplay with visible progress; runtime plays prepared stems/samples and drives adaptive timing.
 
@@ -68,12 +68,13 @@ After replacing addon files in a project that is already open in Godot, restart 
 Invoke-RestMethod http://127.0.0.1:9087/pocket-chordsmith/health
 ```
 
-5. Open the current Pocket Chordsmith web app or hosted itch build.
-6. Load a known song with non-default BPM, key, scale, sections, and at least drums, bass, chords, melody, and guitar if possible.
-7. Click `Push to Godot`.
-8. Confirm the Godot `Chordsmith` tab imports the song, reports success, and shows the expected BPM/key/scale and a non-zero event count.
-9. Save the chart resource and run the runtime validator against the saved chart.
-10. If the browser falls back to hidden form submit, clipboard, or manual paste, do not record automatic direct push as verified until the Godot editor visibly imports the song. Paste the same `PCS1:` payload in the Godot tab when needed and record that path as fallback/manual import only.
+5. In the Godot `Chordsmith` tab, turn `Browser Receiver` on and choose `Copy Receiver Token`.
+6. Open the current Pocket Chordsmith web app or hosted itch build.
+7. Load a known song with non-default BPM, key, scale, sections, and at least drums, bass, chords, melody, and guitar if possible.
+8. Click `Push to Godot`; when prompted, paste the per-session receiver token.
+9. Confirm the Godot `Chordsmith` tab imports the song, reports success, and shows the expected BPM/key/scale and a non-zero event count.
+10. Save the chart resource and run the runtime validator against the saved chart.
+11. If authenticated fetch is unavailable, do not record automatic direct push as verified. Paste the same `PCS1:` payload in the Godot tab and record that path as fallback/manual import only.
 
 Record the browser URL or build label, Godot version, addon version, receiver health result, import result, chart path, validation command, and validation result.
 
@@ -82,14 +83,16 @@ Record the browser URL or build label, Godot version, addon version, receiver he
 The editor receiver in `editor/pcs_push_receiver.gd` is intentionally narrow in what it can do:
 
 - binds only to `127.0.0.1`;
-- accepts only `GET /pocket-chordsmith/health`, `POST /pocket-chordsmith/push-to-godot`, and CORS `OPTIONS`;
+- is off by default and has a visible editor toggle;
+- generates a new 256-bit bearer token whenever it starts;
+- requires a loopback `Host`, an approved local/official Chordsmith `Origin`, the current token, and a unique bounded request ID for imports;
+- limits import rate and rejects replayed request IDs;
+- answers unauthorized health checks with generic availability only;
 - caps request bodies at `1 MiB`;
 - times clients out after `2500 ms`;
 - imports only through the editor callback and returns `503` when the importer is not ready.
 
-It also intentionally returns broad CORS headers, including `Access-Control-Allow-Origin: *`, so hosted Pocket Chordsmith pages can POST to the local editor receiver. This differs from Pocket DAW's stricter local bridge, which requires loopback hosts, trusted local origins, and bearer-token authorization for live control endpoints.
-
-Keep the current broad CORS stance only while the receiver remains editor-only, loopback-only, import-only, and bounded. Revisit origin allow-listing before adding any receiver action that writes outside chart import, controls runtime playback, reads project files, exposes filesystem paths, or stays active without the editor tab.
+The receiver never returns wildcard CORS. Private Network Access is granted only on preflight from an approved origin. Restarting or turning the receiver off invalidates the copied token; Pocket Chordsmith stores it only in browser session storage. Manual `Paste JSON/Code` remains the universal fallback and does not require the receiver.
 
 Chrome may still block hosted itch iframe pages from reaching loopback before
 the receiver can accept the push. A console message such as `Permission was
@@ -97,3 +100,9 @@ denied for this request to access the loopback address space` means the browser
 embedding policy blocked localhost access; it is not proof that Godot ignored a
 valid payload. In that case use a local/standalone Chordsmith build or paste the
 copied `PCS1:` code into the Chordsmith tab.
+
+## Imported Pack Trust Boundary
+
+ZIP imports validate every file and directory path before creating the staging directory. They reject absolute/traversal/colon paths, excessive depth or entry count, oversized entries/archives/aggregate output, unsafe compression ratios, ZIP64/multi-disk/encrypted entries, and duplicate or case-colliding names. Extraction happens in a temporary sibling directory; the importer validates the bounded manifest before atomically moving the pack into its final project path, and removes staging on failure.
+
+Imported manifests resolve audio assets relative to the extracted pack by default. Existing `res://` and `user://` references are ignored with a warning. Trusted, hand-authored project manifests may opt in with `{"trusted_project_paths": true}`; even then, audio paths must exist and use a supported `.wav`, `.ogg`, or `.mp3` type.

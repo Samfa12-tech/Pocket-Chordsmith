@@ -1,5 +1,21 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.3.0 - unreleased candidate
+
+- Original Campfire Acoustic prepared strum/pick routing and preserved source identity.
+- Native DAW packs use the fully arranged audio and transport map, retaining recorded
+  media, FX, automation, later edits and tails instead of substituting embedded PCS.
+- Corrected section/global origins, full-mix versus stem gain selection, prepared
+  loop clock and WAV-ending handling, with bounded PCM16/float-import evidence.
+- Threaded imported-resource preparation, warm residency and cancellation before
+  I/O or while assets load. Existing cold/rendered performance budgets remain open.
+- Optional prepared-passage editor Hear/Stop, visible range/lead-in/tail/manual cue,
+  no autoplay and preserved shared bus effect identity across its lifecycle.
+- Tested on Godot4.6.3. No candidate4.4, physical-output or human-listening pass.
+
+Source/browser/runtime evidence and remaining gates are documented in the runtime
+acceptance and prepared-passage reports. No public1.3.0 publication is recorded.
+
 ## 1.2.0 - 2026-07-22
 
 Pocket Audio schema-17 sound-profile compatibility update.
