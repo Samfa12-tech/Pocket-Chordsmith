@@ -39,3 +39,35 @@ The public v68 file is a source candidate. No itch/mirror publication, physical
 phone/speaker listening or exact-installed native acceptance is claimed. The
 broader proposal A/B, Apply/Discard/Undo and optional playable examples remain
 separate follow-through; this slice adds contextual audition and manual guidance.
+
+## Bass lifecycle review correction
+
+PR109's original head `c463574938fd81732ffe6f31bfd117311b2f4bfe` is held.
+Independent review found that ordinary bass and slide oscillators were not in a
+release list. A held bass could continue past audition completion or manual Stop.
+The original new audition fixtures disabled bass and missed this existing engine
+gap; their passing transport checks were insufficient for a finite audio claim.
+
+Three real-browser counterexamples reproduce the problem against that preserved
+build: a four-bar held phrase at 240 BPM has a 3.76s duration. A selected first bar
+with 0.5s tail ends at AudioContext time 1.54s, but original bass stops are 4.05s /
+3.3732s, and slide stops 4.02s. Manual Stop does not reschedule them. Early fixture
+runs that accidentally projected a hold onto the first trigger were invalid;
+the retained counterexamples construct the exact live fixture after import and
+assert the trigger and its false hold flag. An explicit real scheduler attack
+keeps runner load from skipping that trigger and hiding the problem.
+
+The follow-up registers bass in the existing voice prune/release machinery,
+without adding a voice-stealing cap or changing ordinary musical durations. Stop
+releases active bass with the existing short fade and cancels future bass before
+its scheduled start. Audition limits duration after accent scaling to the musical
+boundary; normal release fits inside the displayed minimum tail. Slide targets
+outside the passage stay out of that preview. The same Stop releases ordinary
+held bass. Live source ownership is separate from offline/MIDI export.
+
+The correction adds desktop/phone held bass, slide, natural completion, manual
+Stop, future lookahead, rapid restart and ordinary full-duration/Stop regressions.
+Validation and publication status are recorded in the family ledger. Existing
+effects may ring during their release; this is not a physical silence/listening
+attestation. Internal helper names/spacing and redundant range arithmetic were
+trimmed to preserve the existing size budget, which was not raised.

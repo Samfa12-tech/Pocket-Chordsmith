@@ -669,6 +669,7 @@ let audioCtx, masterGain, chordGain, beatGain, leadGain, guitarGain, metroGain, 
 const schedulerTimers = new Set();
 const activeChordVoices = [];
 const activeLeadVoices = [];
+const activeBassVoices = [];
 const activeGuitarVoices = [];
 const liveNoiseBuffers = new Map();
 let settingsFocusReturn = null;

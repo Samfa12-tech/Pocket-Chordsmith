@@ -1,5 +1,5 @@
 function renderProgression(){
-  cancelChordAuditionIfChanged();
+  invalidateAudition();
   els.progressionSlots.innerHTML = "";
   state.progression.forEach((ch, i) => {
     const isActiveBar = i < sectionBarCount();
@@ -2283,7 +2283,7 @@ function refreshAutoSaveStatus(){
   }
 }
 function markProjectDirty(){
-  cancelChordAuditionIfChanged(true);
+  invalidateAudition(true);
   state.autosaveDirty = true;
   queueChordsmithCampfireRefresh();
   if(els.autoSaveStatus) els.autoSaveStatus.textContent = "Auto-save pending";

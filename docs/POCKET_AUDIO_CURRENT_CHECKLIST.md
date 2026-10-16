@@ -1,85 +1,61 @@
 # Pocket Audio current checklist
 
-This is a short checkpoint index; detailed implementation/test/publication
-evidence remains in POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md. Nothing below
-means published or physically heard unless explicitly evidenced there.
+Detailed history and failed attempts remain in
+[the implementation ledger](POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md).
+Source, executed tests, installed acceptance and publication are distinct.
+No new product candidate has been published.
 
-| Work | Implemented/tested checkpoint | Still open |
+| Work | Implemented and tested | Remaining acceptance |
 | --- | --- | --- |
-| Reliability audit | Bounded cache, playback, timing, mixer and UI fixes in prior reviewed slices | Long-session/working-set budgets; retain hypotheses where runtime evidence is absent |
-| Campfire family | Original shared implementation, voicings/seed/rate/gain/tail/cache identity and legacy source tests | Real vocal/live/listening acceptance and documented live fallback limits |
-| Chordsmith/DJ | Selected theme work and shared runtime; existing desktop/touch/browser evidence | Remaining BeatStitch/contextual Hear, optional examples, feedback, A/B and phone controls |
-| DAW Hear/Finish | PR101/103/104/105 source accepted; cold hydration fixed; delayed-discovery correction passes local full browser51 and DAW1235 | Follow-up exact hosted/source review; installed/native/device/listening remains separate |
-| Cold saved audio | PR104 returns the installed clone; six new regressions pass locally and hosted; source hold cleared | Final installed cold/reopen acceptance |
-| Meter/delivery | PR100 calibration; PR103 native monitor/seven WAV references; final-file QC presentation, cancellation/report/unfinished-input checks implemented locally | New QC candidate source/hosted review; exact installed output checks |
-| Godot | Core/Chordsmith/native routes; bounded float32→PCM16 captures; worker loading; corrected controlled-completion22 and fail-closed full gate pass locally | PR106 nominal green job invalid; follow-up hosted/source review; full-game/rendered/listening/version gates remain |
-| DAW safeguards | Existing save/Undo/media/plugin foundations retained; menu/focus/overflow fixes | Remaining dense-session, popover/shortcut and actual Windows scaling acceptance |
-| Installed acceptance | No new installer built; source/PCM/UI evidence kept separate | One exact final installed candidate, retained real exports, device/loopMIDI/output/listening checks |
-| Release truth | Draft candidates and evidence ledger; Core stays private/workspace-only | Versions/family manifest/current advisory applicability; reviewed candidates before public targets |
+| Reliability audit | Bounded cache, cancellation, playback, timing, mixer and UI fixes in reviewed slices | Representative long-session and peak working-set budgets; unmeasured audit entries remain hypotheses |
+| Campfire family | Original shared recipe and family selectors; full voicings, deterministic seed/rate/gain/tail/cache identity and legacy-source tests | Human listening and live/vocal acceptance; retain documented live fallback limits |
+| Chordsmith | Approved themes retain Night blue default and saved choices; selected-bar Hear/Stop, visible lead-in/tail, optional manual cue and stale-preparation guards | PR109 original head is held for bass release; follow-up candidate review; broader proposal A/B, optional playable examples and final physical-phone acceptance |
+| Chordsmith bass correction | Old-head range/Stop failures reproduced; owned bass release, future-source cancellation, finite duration and slide bounds implemented | Exact follow-up hosted/source review; no physical listening claim |
+| DJ | Existing shared prepared Campfire/runtime and browser tests retained | Contextual audition WIP safely stashed at 73895c272a40f03b5869db593594c817e0f193af; correct fixture and complete validation, feedback and comparison follow-through |
+| DAW Hear/Finish | PR101/103/104/105 source accepted; native monitor, final downloaded-WAV QC and hydration ownership implemented | Exact final installed/native/device/listening acceptance |
+| Passive DAW readiness | PR107 Godot correction and PR108 updater delta independently accepted; Export/File DOM/focus survive delayed discovery and automatic updater results | Dense installed WebView/Windows scaling acceptance |
+| Meter/delivery | PR100 external calibration and PR103 native monitor/seven WAV references; PR105 final Blob QC source accepted | Exact installed decoded outputs; internal QC is not general WAV-file certification |
+| Godot | Both Core/Chordsmith and fully arranged native DAW routes; bounded float32-to-PCM16 captures, threaded imported-resource loading and controlled cancellation lifecycle | Cold preparation and rendered worst-frame budgets failed; representative game, long-session, working-set, dropout/listening evidence; prepared-transition editor workflow and version reconciliation |
+| DAW safeguards | Existing save/Undo/media/plugin foundations retained; menu, focus and overflow corrections | Dense-session popovers/shortcuts and actual Windows scaling |
+| Installed candidate | No new installer built; source/browser/PCM evidence kept separate | One reviewed exact candidate, eligible retained capture baseline, real current exports, loopMIDI/device/output/listening checks |
+| Release truth | DAW source 0.6.51/public 0.6.50; Core 0.2.0/Godot 1.2.0 remain separate version domains | Final versions/family manifest/current advisory applicability; Godot advertised 4.4 versus tested 4.6.3 |
 
-Review truth: PR101 head60b7c9f and PR103 incremental head51045df accepted source;
-PR104 head65534010c704fdb3633a8a549db1f7d8b1d4fd7b independently accepted and
-clears the reported hydration source hold. Exact CI38820399984 and
-CodeQL38820399393 succeeded; hosted browser **43 passed, 2 skipped**, frontend
-1228 passed. All earlier reviewed heads are preserved. Hosted PR103 browser:
-**37 passed, 2 skipped**; the local full
-PR102 browser run was **39 passed**. Five-minute worker timing/cancellation is
-local evidence and a distinct acceptance item, not a hosted or device pass.
-The delivery-QC slice has local Core213/DAW1235/typecheck/build and targeted
-browser22 passes (including both real long-worker checks), not yet hosted or
-installed evidence. See apps/pocket-daw/docs/DELIVERY_WAV_QC_2026-10-16.md.
-PR105 exact158b7f11623a22dc3ab4442927ea12b875edd272 independently accepted in
-source. CI38822567029 and CodeQL38822567991 terminal success; hosted Core213,
-DAW1235, browser47passed/2long-worker skipped. Its decoder/QC is not general WAV
-file certification. Installed/device/listening acceptance remains separate.
-Godot loading/compatibility details and explicit failed/open performance budgets:
-addons/pocket_chordsmith/docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md.
+PR108 exact `0c89efd7734ad9314d68a6d1f33b6cd37820d2a3` is source accepted.
+CI38829962766 and CodeQL38829962684 succeeded. Six CI jobs ran and seven
+components were intentionally skipped; this is not thirteen component reruns.
+Hosted DAW browser: 54 passed/two long-worker skips; local full: 56 passed.
 
-PR106 head844370fb1afcf338186f129a7b55dbf075120534 is held: hosted CI38825154382
-browser45passed/2failed/2skipped; its Godot job exited0 despite a script exception,
-so it is not a clean19-check pass. CodeQL38825154407 passed both languages.
-The follow-up reproduces both DAW failures via delayed startup discovery (actual
-full-shell render stacks captured), preserves active Export/File controls, and
-adds controlled Godot completion holds plus rejection of unexpected script errors.
-Local follow-up: full DAW1235, browser51 (including2longworkers), Godot22 plus
-fullgate142addonentries, root-tooling26 (6newgatechecks), typecheck/build and
-repo/security/governance/pins/manifest passed. Core/Rust/physical/installed were
-not rerun for this correction. Exact follow-up hosted/source review is pending.
-Chordsmith contextual audition WIP is safely stashed at
-b62bcdcf4b5de65201187a80eab167ad635f28e0 (16 local desktop/touch checks passed;
-unit runner temp-path failure is not a pass). Resume after integrating correction.
+PR109 exact `c463574938fd81732ffe6f31bfd117311b2f4bfe` has successful
+CI38830488145 and CodeQL38830488197, but remains held for the independently
+confirmed bass Stop/range defect. Its passing bass-disabled fixtures did not
+prove finite bass audio. See
+[the contextual audition report](../apps/chordsmith-web/docs/CONTEXTUAL_AUDITION_2026-10-16.md).
+The follow-up passes 151 full desktop/phone workflow and genre checks with five
+intentional phone genre-metric skips, plus four additional real-browser beat-bus
+PCM checks. These prove nonzero generated bass becomes silent after Stop/end on
+that browser bus. They do not prove a speaker route or human listening.
+Lint, limited authored-module typecheck, four unit checks, deterministic bundle,
+production Vite build and existing size budgets pass: HTML1,073,920/1,100,000;
+modules899,951/900,000. Exact follow-up hosted/source review is pending.
 
-PR107 exactf2ef0d382349de5a5c0e189192f96876af9c3471 hosted browser48passed/
-1failed/2skipped (CI38827765430). Godot segment independently source-accepted:
-hosted22clean/no script errors or leaks/package142 and CodeQL38827765437 both
-languages green. The residual DAW race is now causally reproduced by controlling
-the3500ms startup updater; captured checkForUpdates render stacks detach both
-Finish and unfinishedQC. A follow-up protects both automatic phases, retains
-available-update notifications/results and keeps explicit updater UI responsive.
-See apps/pocket-daw/docs/PASSIVE_READINESS_RENDERING_2026-10-16.md.
-Updater follow-up local fullbrowser56/56 (both long-workers included), DAW1235,
-typecheck/build/repo/security/governance/manifest/whitespace passed. Exact
-follow-up hosted/source review remains pending; prior failed head is preserved.
-Latest Chordsmith stashb056b6897daa86e8c76dce9a9986991770cf1be4 preserves138
-desktop/touch passes before final copy/naming cleanup; cleanup is not retested.
-Size now HTML1073923/1100000, modules899954/900000; budgets unchanged. Older
-stashes are retained. Unit4/lint/typecheck passed before cleanup.
+PR106's nominally green Godot run was invalid because it printed a script error.
+PR107's corrected hosted lifecycle checks are clean:22 checks, no script errors
+or leaks, package142; the fail-closed gate rejects the old misleading output.
+Failed/open runtime budgets are retained in
+[Godot acceptance evidence](../addons/pocket_chordsmith/docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md).
 
-The capture fingerprint is unchanged; the source-level microphone omission is
-documented as omitted, not passed. If later shared/capture impact requires a
-physical check, reserve the required check for Sam this evening and continue
-independent work. No such physical result is currently claimed.
+The native capture fingerprint is unchanged. Source-level microphone work is
+omitted, not passed. The final exact installed run must still establish an
+eligible directly retained baseline and current PCM/file integrity, connected
+loopMIDI and real retained WAV/MIDI exports. If a fresh physical check becomes
+necessary, retain Sam's Friday16October evening AEDT check and continue independent
+work. No physical result is currently claimed.
 
-Public targets remain Chordsmith/DJ itch plus mirrors, exact DAW GitHub/updater
-installer, and separate Godot addon itch ZIP plus official Store and Library5174.
-Use fresh website main and preserve editorial commitb2469ac41f721074868b89d1fbab9ccfea56e34f.
-Reef Sweep, PR75 and dependency PRs71–74 remain untouched. Deferred contribution,
-share-code compression, deep ASIO and multitrack work remain backlog.
-
-Chordsmith contextual audition is implemented in the next isolated source slice:
-final22desktop/touch checks after copy/naming/marker cleanup pass; earlier full138
-including unchanged smoke, final lint/typecheck/unit4/deterministic/size pass.
-HTML1073923/1100000, modules899954/900000; no budget increase. See
-apps/chordsmith-web/docs/CONTEXTUAL_AUDITION_2026-10-16.md for bounded scope.
-PR108 confirmed0c89efd7734ad9314d68a6d1f33b6cd37820d2a3; exact hosted DAW browser
-and frontend pass, Rust CodeQL pending. No product publication/installed pass.
+Review candidates before public release. Targets remain Chordsmith/DJ itch and
+existing mirrors, exact DAW GitHub/updater installer, and the separate Godot addon
+ZIP on Chordsmith itch plus official Store and Library5174. Product mirrors must
+start from fresh website main and preserve editorial commit
+`b2469ac41f721074868b89d1fbab9ccfea56e34f`.
+Core stays private/workspace-only. Reef Sweep, PR75 and dependency PRs71-74 remain
+untouched. Contribution buttons, share-code compression, deep ASIO and multitrack
+remain backlog. No spend, accounts, credentials/security or licence changes.

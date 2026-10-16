@@ -242,6 +242,7 @@ function funkStabDurationScale(){
   return 1-sanitizeFunkParameters(state.funkParameters).stabTightness*0.68;
 }
 function playTone(freq, t, dur, type, dest, peak=0.4, filterType=null, filterFreq=1400, pan=0){
+  if(dest === beatGain) dur = bassAuditionDuration(t,dur);
   const chip = isChipActive() && state.chipTexture?.enabled ? sanitizeChipTexture(state.chipTexture,state.chipPreset) : null;
   if(chip){
     const recipe=chipVoiceRecipe(freq,type,filterFreq,peak,pan,Math.round(t*1000),chip);
@@ -258,8 +259,9 @@ function playTone(freq, t, dur, type, dest, peak=0.4, filterType=null, filterFre
   node.connect(gain); connectWithPan(audioCtx, gain, dest, pan);
   adsr(gain, t, 0.01, 0.06, 0.7, dur, peak);
   osc.start(t); osc.stop(t+dur+0.25);
-  const voice = {oscs:[osc], gain, stopAt:t + dur + 0.25};
+  const voice = {oscs:[osc], gain, startAt:t, stopAt:t + dur + 0.25};
   if(dest === leadGain) registerLiveVoice(activeLeadVoices, voice, LIVE_LEAD_VOICE_LIMIT, t, 0.018);
+  if(dest === beatGain) registerLiveVoice(activeBassVoices,voice,Infinity,t);
   return voice;
 }
 function pruneLiveVoices(list, now=audioCtx?.currentTime || 0){
@@ -282,7 +284,7 @@ function releaseLiveVoice(voice, at=audioCtx?.currentTime || 0, fade=0.025){
     .concat(Array.isArray(voice.oscs) ? voice.oscs : [])
     .concat(Array.isArray(voice.sources) ? voice.sources : []);
   sources.forEach(source => {
-    try{ source.stop(safeAt + Math.max(0.025, fade * 3)); }catch(e){}
+    try{ source.stop(voice.startAt > safeAt ? safeAt : safeAt + Math.max(0.025, fade * 3)); }catch(e){}
   });
   voice.stopAt = safeAt;
 }
@@ -578,11 +580,13 @@ function playBass(rootMidi, t, dur=0.22, peak=0.34, accent=false, articulation="
   if(art === "slap" || art === "pop") playTone(midiToFreq(rootMidi + (art === "pop" ? 24 : 12)),t,Math.min(0.045,bassDur),"square",beatGain,0.018 + (art === "pop" ? funk.popBrightness : funk.slapAmount) * 0.018,"highpass",1900);
 }
 function playBassPhrase(rootMidi, t, dur=0.22, peak=0.34, accent=false, slideMidi=null, slideOffset=null, articulation="finger"){
+  if(chordAudition && slideOffset >= bassAuditionDuration(t,Infinity)) slideMidi = null;
   if(slideMidi === null || slideOffset === null){
     playBass(rootMidi, t, dur, peak, accent, articulation);
     return;
   }
   const cfg = bassToneConfig();
+  dur = bassAuditionDuration(t,dur);
   const endAt = t + Math.max(0.08, dur) + 0.22;
   const slideAt = Math.max(t + 0.02, t + slideOffset);
   const makeVoice = (midi, target, wave, peakMul, cutoff) => {
@@ -597,6 +601,7 @@ function playBassPhrase(rootMidi, t, dur=0.22, peak=0.34, accent=false, slideMid
     osc.connect(f); f.connect(gain); gain.connect(beatGain);
     adsr(gain, t, 0.01, 0.06, 0.7, Math.max(0.08, dur), peak * peakMul * (accent ? 1.18 : 1));
     osc.start(t); osc.stop(endAt);
+    registerLiveVoice(activeBassVoices,{oscs:[osc],gain,startAt:t,stopAt:endAt},Infinity,t);
   };
   makeVoice(rootMidi, slideMidi, cfg.mainWave, cfg.mainPeak, accent ? cfg.cutoff * 1.18 : cfg.cutoff);
   makeVoice(rootMidi-12, slideMidi-12, cfg.subWave, cfg.subPeak, cfg.subCutoff);

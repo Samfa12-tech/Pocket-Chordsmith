@@ -1515,3 +1515,43 @@ PR108 updater correction is confirmed draft at
 0c89efd7734ad9314d68a6d1f33b6cd37820d2a3. Exact CI38829962766 DAW browser and
 frontend passed; Rust CodeQL still pending at this read. Prior failed PR107 head
 is preserved. Its scoped Godot correction remains independently source-accepted.
+
+## Chordsmith PR109 held-bass review correction
+
+PR109c463574938fd81732ffe6f31bfd117311b2f4bfe is held: its bass-disabled audition
+fixtures missed untracked bass/slide voices feeding beatGain. Three corrected
+real-Web-Audio counterexamples fail that preserved build:4bar held phrase3.76s
+at240BPM stops4.05/3.3732s andslide4.02s despiteonebar+0.5stail end1.54s; manual
+Stop leavesfuture/activebassscheduled. Earlylegacy-arrayfixture failures were
+invalid(hold0projectedtrue), retained andnotcounted counterexamples. Corrected
+fixture uses totalSteps live state after import, asserts trigger/hold0false and
+explicitly schedules actual selected attack so runnerlateness cannot hideit.
+
+Follow-upusesexistingvoiceprune/release withownedbasslist, no newstealingcap;
+normaldurations/exports retained. Auditionclampsafteraccent scaling andkeeps
+slide targets beyondpassage out; Stop releasesbassincludingfuture starts before
+onset. OrdinaryStop nowreleasesheldbass too. Source internalhelpers/spacing and
+redundantrange arithmetic compacted topreserveexistingmodulebudget:899951/900000,
+HTML1073920/1100000. No budget increase.
+
+Finalfull desktop/phone workflowplusgenrequality:151passed/5intendedmobilegenre
+skips (146workflow+5desktopgenre). Existing22contextual and8newbass casesincluded.
+Earlier28targetpassedbeforefuture-onsetstrengthening; finalfullcoversstrengthened
+casesandnormalfull-duration/Stop. Lint/limitedtypecheck/unit4/deterministic16/
+repo-security-secrets-governance-whitespacepass. Added4realbrowserbeatbusPCM
+checks andproductionVitebuild finishing; notyetcountedpassedatthisentry.
+No physical/device/humanlistening/installednative/capturechanges/publication.
+DJWIPretained73895c272a40f03b5869db593594c817e0f193af; resumefromcorrection.
+PR108 updaterdelta independentlyaccepted; exactCI38829962766/CodeQL38829962684
+terminalsuccess(sixjobsran,sevenskipped; not13componentreruns).
+
+Final bass-correction evidence: production Vite build passed. All four additional
+browser beat-bus PCM checks passed on desktop/phone: generated held bass is
+nonzero while playing and below1e-5 RMS after manual Stop or natural completion.
+The final full run is151 passed/five intentional mobile genre-metric skips;
+these four extra checks were added afterward and passed separately on unchanged
+source. No speaker/device/listening attestation is inferred. PR109 exact hosted
+CI38830488145 and CodeQL38830488197 succeeded, but its source hold remains until
+the bass follow-up review. PR108 is independently accepted with exact terminal
+CI/CodeQL success. Final source size899951/900000 and HTML1073920/1100000 pass;
+no budget increase. Source-only correction ready for a separate draft PR.

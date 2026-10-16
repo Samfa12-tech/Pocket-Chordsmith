@@ -1855,6 +1855,7 @@ let audioCtx, masterGain, chordGain, beatGain, leadGain, guitarGain, metroGain, 
 const schedulerTimers = new Set();
 const activeChordVoices = [];
 const activeLeadVoices = [];
+const activeBassVoices = [];
 const activeGuitarVoices = [];
 const liveNoiseBuffers = new Map();
 let settingsFocusReturn = null;
@@ -4606,6 +4607,7 @@ function funkStabDurationScale(){
   return 1-sanitizeFunkParameters(state.funkParameters).stabTightness*0.68;
 }
 function playTone(freq, t, dur, type, dest, peak=0.4, filterType=null, filterFreq=1400, pan=0){
+  if(dest === beatGain) dur = bassAuditionDuration(t,dur);
   const chip = isChipActive() && state.chipTexture?.enabled ? sanitizeChipTexture(state.chipTexture,state.chipPreset) : null;
   if(chip){
     const recipe=chipVoiceRecipe(freq,type,filterFreq,peak,pan,Math.round(t*1000),chip);
@@ -4622,8 +4624,9 @@ function playTone(freq, t, dur, type, dest, peak=0.4, filterType=null, filterFre
   node.connect(gain); connectWithPan(audioCtx, gain, dest, pan);
   adsr(gain, t, 0.01, 0.06, 0.7, dur, peak);
   osc.start(t); osc.stop(t+dur+0.25);
-  const voice = {oscs:[osc], gain, stopAt:t + dur + 0.25};
+  const voice = {oscs:[osc], gain, startAt:t, stopAt:t + dur + 0.25};
   if(dest === leadGain) registerLiveVoice(activeLeadVoices, voice, LIVE_LEAD_VOICE_LIMIT, t, 0.018);
+  if(dest === beatGain) registerLiveVoice(activeBassVoices,voice,Infinity,t);
   return voice;
 }
 function pruneLiveVoices(list, now=audioCtx?.currentTime || 0){
@@ -4646,7 +4649,7 @@ function releaseLiveVoice(voice, at=audioCtx?.currentTime || 0, fade=0.025){
     .concat(Array.isArray(voice.oscs) ? voice.oscs : [])
     .concat(Array.isArray(voice.sources) ? voice.sources : []);
   sources.forEach(source => {
-    try{ source.stop(safeAt + Math.max(0.025, fade * 3)); }catch(e){}
+    try{ source.stop(voice.startAt > safeAt ? safeAt : safeAt + Math.max(0.025, fade * 3)); }catch(e){}
   });
   voice.stopAt = safeAt;
 }
@@ -4942,11 +4945,13 @@ function playBass(rootMidi, t, dur=0.22, peak=0.34, accent=false, articulation="
   if(art === "slap" || art === "pop") playTone(midiToFreq(rootMidi + (art === "pop" ? 24 : 12)),t,Math.min(0.045,bassDur),"square",beatGain,0.018 + (art === "pop" ? funk.popBrightness : funk.slapAmount) * 0.018,"highpass",1900);
 }
 function playBassPhrase(rootMidi, t, dur=0.22, peak=0.34, accent=false, slideMidi=null, slideOffset=null, articulation="finger"){
+  if(chordAudition && slideOffset >= bassAuditionDuration(t,Infinity)) slideMidi = null;
   if(slideMidi === null || slideOffset === null){
     playBass(rootMidi, t, dur, peak, accent, articulation);
     return;
   }
   const cfg = bassToneConfig();
+  dur = bassAuditionDuration(t,dur);
   const endAt = t + Math.max(0.08, dur) + 0.22;
   const slideAt = Math.max(t + 0.02, t + slideOffset);
   const makeVoice = (midi, target, wave, peakMul, cutoff) => {
@@ -4961,6 +4966,7 @@ function playBassPhrase(rootMidi, t, dur=0.22, peak=0.34, accent=false, slideMid
     osc.connect(f); f.connect(gain); gain.connect(beatGain);
     adsr(gain, t, 0.01, 0.06, 0.7, Math.max(0.08, dur), peak * peakMul * (accent ? 1.18 : 1));
     osc.start(t); osc.stop(endAt);
+    registerLiveVoice(activeBassVoices,{oscs:[osc],gain,startAt:t,stopAt:endAt},Infinity,t);
   };
   makeVoice(rootMidi, slideMidi, cfg.mainWave, cfg.mainPeak, accent ? cfg.cutoff * 1.18 : cfg.cutoff);
   makeVoice(rootMidi-12, slideMidi-12, cfg.subWave, cfg.subPeak, cfg.subCutoff);
@@ -5346,7 +5352,7 @@ async function chordsmithCampfireMidiEvents(events, ticksPerQuarter, snapshot, o
 }
 
 function renderProgression(){
-  cancelChordAuditionIfChanged();
+  invalidateAudition();
   els.progressionSlots.innerHTML = "";
   state.progression.forEach((ch, i) => {
     const isActiveBar = i < sectionBarCount();
@@ -7630,7 +7636,7 @@ function refreshAutoSaveStatus(){
   }
 }
 function markProjectDirty(){
-  cancelChordAuditionIfChanged(true);
+  invalidateAudition(true);
   state.autosaveDirty = true;
   queueChordsmithCampfireRefresh();
   if(els.autoSaveStatus) els.autoSaveStatus.textContent = "Auto-save pending";
@@ -31336,96 +31342,89 @@ function schedulerStepsToReach(nextNoteTime, targetTime, playStep, timing){
   return high;
 }
 
-let chordAudition = null;
-let chordAuditionRevision = 0;
-let chordAuditionMessage = "Select a chord bar. Audio quality not checked.";
-
-function chordAuditionPlan(){
-  const bar = Math.trunc(state.selectedSlot);
-  if(bar < 0 || bar >= sectionBarCount()) return null;
-  const barsBefore = clamp(Number(document.getElementById("chordAuditionLead")?.value || 1), 0, 2);
-  const tail = clamp(Number(document.getElementById("chordAuditionTail")?.value || 1), 0.5, 2);
-  // Include the previous chord attack.
-  const start = Math.max(0, bar * stepsPerBar() - barsBefore * stepsPerBar());
-  const end = Math.min(sectionBarCount() * stepsPerBar(), (bar + 1) * stepsPerBar());
-  const actualLead = (bar * stepsPerBar() - start) / stepsPerBar();
-  return {section:state.currentSection, bar, start, end, tail,
-    label:`Section ${state.currentSection}, bar ${bar + 1} / ${actualLead} bar${actualLead === 1 ? "" : "s"} before / ${tail}s tail`};
+let chordAudition=null;
+let auditionRevision=0;
+let auditionMessage="Select a chord bar. Audio quality not checked.";
+function bassAuditionDuration(time,dur){
+return chordAudition?Math.min(dur,Math.max(.01,chordAudition.endAudioTime-chordAudition.tail-time)):dur;
 }
-
-function chordAuditionIsCurrent(context=chordAudition){
-  return !!context && chordAudition === context && context.revision === chordAuditionRevision
-    && state.currentSection === context.section && state.selectedSlot === context.bar;
+function chordBitPlan(){
+const bar=Math.trunc(state.selectedSlot);
+if(bar < 0||bar >= sectionBarCount()) return null;
+const barsBefore=clamp(Number(document.getElementById("chordAuditionLead")?.value||1), 0, 2);
+const tail=clamp(Number(document.getElementById("chordAuditionTail")?.value||1), 0.5, 2);
+const actualLead=Math.min(bar,barsBefore);
+const start=(bar-actualLead)*stepsPerBar(), end=(bar+1)*stepsPerBar();
+return {section:state.currentSection, bar, start, end, tail,
+  label:`Section ${state.currentSection}, bar ${bar + 1} / ${actualLead} bar${actualLead===1 ? "" : "s"} before / ${tail}s tail`};
 }
-
+function isAuditionCurrent(context=chordAudition){
+return !!context&&chordAudition===context&&context.revision===auditionRevision
+ &&state.currentSection===context.section&&state.selectedSlot===context.bar;
+}
 function clearChordAudition(message="Stopped."){
-  chordAudition = null;
-  chordAuditionMessage = message;
-  updateChordAuditionUi();
+chordAudition=null;
+auditionMessage=message;
+renderAuditionUi();
 }
-
-function cancelChordAuditionIfChanged(edited=false){
-  if(edited) chordAuditionRevision++;
-  if(chordAudition && (edited || !chordAuditionIsCurrent())){
-    stopPlayback();
-    chordAuditionMessage = "Passage changed. Hear this bit again.";
-  }
-  updateChordAuditionUi();
+function invalidateAudition(edited=false){
+if(edited) auditionRevision++;
+if(chordAudition&&(edited||!isAuditionCurrent())){
+  stopPlayback();
+  auditionMessage="Passage changed. Hear this bit again.";
 }
-
-function updateChordAuditionUi(){
-  const hear = document.getElementById("hearChordBitBtn"), stop = document.getElementById("stopChordBitBtn");
-  const range = document.getElementById("chordAuditionRange"), status = document.getElementById("chordAuditionStatus");
-  if(!hear || !stop || !range || !status) return;
-  const plan = chordAuditionPlan();
-  hear.disabled = !plan || !!chordAudition || transportBusy;
-  stop.disabled = !chordAudition;
-  range.textContent = plan?.label || "Select an active chord bar.";
-  hear.setAttribute("aria-label", `Hear this bit: ${range.textContent}`);
-  status.textContent = chordAuditionMessage;
+renderAuditionUi();
 }
-
-async function hearSelectedChordBit(){
-  if(transportBusy) return;
-  const plan = chordAuditionPlan();
-  if(!plan) return;
-  storeSection();
-  stopPlayback({forAudition:true});
-  const context = {...plan, revision:chordAuditionRevision, source:JSON.stringify(exportProject()), endAudioTime:Infinity};
-  chordAudition = context;
-  chordAuditionMessage = "Preparing. Stop cancels.";
-  updateChordAuditionUi();
-  try{
-    await togglePlay("audition");
-  }finally{
-    if(chordAudition === context && !state.isPlaying) clearChordAudition(context.error || "Not played. Hear this bit again.");
-    updateChordAuditionUi();
-  }
+function renderAuditionUi(){
+const hear=document.getElementById("hearChordBitBtn"), stop=document.getElementById("stopChordBitBtn");
+const range=document.getElementById("chordAuditionRange"), status=document.getElementById("chordAuditionStatus");
+if(!hear) return;
+const plan=chordBitPlan();
+hear.disabled=!plan||!!chordAudition||transportBusy;
+stop.disabled=!chordAudition;
+range.textContent=plan?.label||"Select an active chord bar.";
+hear.setAttribute("aria-label", `Hear this bit: ${range.textContent}`);
+status.textContent=auditionMessage;
 }
-
+async function hearChordBit(){
+if(transportBusy) return;
+const plan=chordBitPlan();
+if(!plan) return;
+storeSection();
+stopPlayback({forAudition:true});
+const context={...plan, revision:auditionRevision, source:JSON.stringify(exportProject()), endAudioTime:Infinity};
+chordAudition=context;
+auditionMessage="Preparing. Stop cancels.";
+renderAuditionUi();
+try{
+  await togglePlay("audition");
+}finally{
+  if(chordAudition===context&&!state.isPlaying) clearChordAudition(context.error||"Not played. Hear this bit again.");
+  renderAuditionUi();
+}
+}
 function checkChordAuditionClock(){
-  const context = chordAudition;
-  if(!context || state.playbackMode !== "audition") return false;
-  if(!chordAuditionIsCurrent()){
-    cancelChordAuditionIfChanged();
-    return true;
-  }
-  if(audioCtx.currentTime >= context.endAudioTime){
-    stopPlayback();
-    chordAuditionMessage = "Audition complete. Audio quality not checked.";
-    updateChordAuditionUi();
-    return true;
-  }
-  return false;
+const context=chordAudition;
+if(!context||state.playbackMode!=="audition") return false;
+if(!isAuditionCurrent()){
+  invalidateAudition();
+  return true;
 }
-
+if(audioCtx.currentTime >= context.endAudioTime){
+  stopPlayback();
+  auditionMessage="Audition complete. Audio quality not checked.";
+  renderAuditionUi();
+  return true;
+}
+return false;
+}
 function bindChordAuditionControls(){
-  document.getElementById("hearChordBitBtn")?.addEventListener("click", hearSelectedChordBit);
-  document.getElementById("stopChordBitBtn")?.addEventListener("click", stopPlayback);
-  for(const id of ["chordAuditionLead", "chordAuditionTail"]){
-    document.getElementById(id)?.addEventListener("change", () => cancelChordAuditionIfChanged(true));
-  }
-  updateChordAuditionUi();
+document.getElementById("hearChordBitBtn")?.addEventListener("click", hearChordBit);
+document.getElementById("stopChordBitBtn")?.addEventListener("click", stopPlayback);
+for(const id of ["chordAuditionLead", "chordAuditionTail"]){
+  document.getElementById(id)?.addEventListener("change", () => invalidateAudition(true));
+}
+renderAuditionUi();
 }
 
 function buildPlaybackPlan(mode="section"){
@@ -31644,10 +31643,10 @@ async function startPlayback(mode="section"){
   setStatus(mode === "sequence" ? "Starting song sequence..." : "Starting audio...");
   await ensureAudio();
   if(playbackRequest !== chordsmithPlaybackRequest) return;
-  if(audition && (!chordAuditionIsCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
   if(!(await prepareChordsmithCampfirePlayback(null, playbackRequest))) return;
   if(playbackRequest !== chordsmithPlaybackRequest) return;
-  if(audition && (!chordAuditionIsCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
   clearSchedulerTimers();
   clearPendingUiTimers();
   state.transportPlan = buildPlaybackPlan(mode);
@@ -31656,8 +31655,8 @@ async function startPlayback(mode="section"){
   nextNoteTime = audioCtx.currentTime + 0.04;
   if(audition){
     audition.endAudioTime = nextNoteTime + schedulerPlanTiming.total + audition.tail;
-    chordAuditionMessage = `Playing ${audition.label}. No automatic quality check.`;
-    updateChordAuditionUi();
+    auditionMessage = `Playing ${audition.label}. No automatic quality check.`;
+    renderAuditionUi();
   }
   playStep = 0;
   resetLiveRecordStepClock();
@@ -31702,7 +31701,7 @@ async function togglePlay(mode="section"){
     setStatus(e?.message || "Could not start audio");
   }finally{
     transportBusy = false;
-    updateChordAuditionUi();
+    renderAuditionUi();
   }
 }
 function stopPlayback(options={}){
@@ -31715,6 +31714,7 @@ function stopPlayback(options={}){
   resetLiveRecordStepClock();
   silenceChordVoices();
   silenceLiveVoices(activeLeadVoices);
+  silenceLiveVoices(activeBassVoices);
   silenceLiveVoices(activeGuitarVoices);
   if(!wasAudition && state.followPlaybackSection !== false && state.currentPlaybackSection){
     storeSection();
@@ -31727,7 +31727,7 @@ function stopPlayback(options={}){
   resetPlaybackHighlights();
   updateTransportButtonLabels();
   if(!wasAudition) renderAll();
-  updateChordAuditionUi();
+  renderAuditionUi();
   setStatus("Stopped");
 }
 

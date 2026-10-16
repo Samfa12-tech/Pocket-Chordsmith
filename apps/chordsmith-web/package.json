@@ -29,7 +29,7 @@
     "verify:single-file": "npm run build:core-runtime && node scripts/build-single-file.mjs --check",
     "build": "npm run build:single-file && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test:e2e": "playwright test tests/smoke.spec.js tests/contextual-audition.spec.js --project=chromium-desktop --project=mobile-chrome",
+    "test:e2e": "playwright test tests/smoke.spec.js tests/contextual-audition.spec.js tests/audition-bass-release.spec.js --project=chromium-desktop --project=mobile-chrome",
     "test:cross-browser": "playwright test tests/smoke.spec.js --project=firefox-desktop --project=webkit-desktop --grep \"loads the main app controls|demo button loads|settings export scope|PCS1 share code\"",
     "test:audio-quality": "playwright test tests/genre-audio-quality.spec.js --project=chromium-desktop",
     "test:unit": "vitest run tests/wav-export-preflight.test.js",

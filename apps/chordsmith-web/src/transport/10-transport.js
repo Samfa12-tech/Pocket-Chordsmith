@@ -214,10 +214,10 @@ async function startPlayback(mode="section"){
   setStatus(mode === "sequence" ? "Starting song sequence..." : "Starting audio...");
   await ensureAudio();
   if(playbackRequest !== chordsmithPlaybackRequest) return;
-  if(audition && (!chordAuditionIsCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
   if(!(await prepareChordsmithCampfirePlayback(null, playbackRequest))) return;
   if(playbackRequest !== chordsmithPlaybackRequest) return;
-  if(audition && (!chordAuditionIsCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
   clearSchedulerTimers();
   clearPendingUiTimers();
   state.transportPlan = buildPlaybackPlan(mode);
@@ -226,8 +226,8 @@ async function startPlayback(mode="section"){
   nextNoteTime = audioCtx.currentTime + 0.04;
   if(audition){
     audition.endAudioTime = nextNoteTime + schedulerPlanTiming.total + audition.tail;
-    chordAuditionMessage = `Playing ${audition.label}. No automatic quality check.`;
-    updateChordAuditionUi();
+    auditionMessage = `Playing ${audition.label}. No automatic quality check.`;
+    renderAuditionUi();
   }
   playStep = 0;
   resetLiveRecordStepClock();
@@ -272,7 +272,7 @@ async function togglePlay(mode="section"){
     setStatus(e?.message || "Could not start audio");
   }finally{
     transportBusy = false;
-    updateChordAuditionUi();
+    renderAuditionUi();
   }
 }
 function stopPlayback(options={}){
@@ -285,6 +285,7 @@ function stopPlayback(options={}){
   resetLiveRecordStepClock();
   silenceChordVoices();
   silenceLiveVoices(activeLeadVoices);
+  silenceLiveVoices(activeBassVoices);
   silenceLiveVoices(activeGuitarVoices);
   if(!wasAudition && state.followPlaybackSection !== false && state.currentPlaybackSection){
     storeSection();
@@ -297,6 +298,6 @@ function stopPlayback(options={}){
   resetPlaybackHighlights();
   updateTransportButtonLabels();
   if(!wasAudition) renderAll();
-  updateChordAuditionUi();
+  renderAuditionUi();
   setStatus("Stopped");
 }
