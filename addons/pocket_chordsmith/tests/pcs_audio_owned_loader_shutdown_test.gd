@@ -67,6 +67,11 @@ func _run() -> void:
 
 func _begin() -> void:
 	var result: Dictionary = await music.prewarm_sections_async(["A"])
-	if not result.cancelled or result.ok or music.created_jobs != 1:
-		push_error("Whole-tree shutdown must resolve cancelled without scheduling another asset.")
+	var invariant_passed: bool = result.cancelled and not result.ok and music.created_jobs == 1
+	if not invariant_passed:
+		quit(1)
+	# SceneTree shutdown has already started. A real script assertion is also
+	# required: the process-result guard rejects SCRIPT ERROR even if an earlier
+	# quit(0) prevents this late quit(1) from changing the process exit status.
+	assert(invariant_passed, "Whole-tree shutdown must resolve cancelled without scheduling another asset.")
 	print(JSON.stringify({"test":"owned-loader-shutdown-result", "cancelled":result.cancelled, "ok":result.ok, "created_jobs":music.created_jobs}))
