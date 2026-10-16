@@ -104,6 +104,7 @@ function renderAll(){
 }
 
 function bindControls(){
+  bindChordAuditionControls();
   bindHorizontalWheelScroll();
   els.playBtn.addEventListener("click", ()=>togglePlay("section"));
   if(els.playSequenceBtn) els.playSequenceBtn.addEventListener("click", ()=>togglePlay("sequence"));

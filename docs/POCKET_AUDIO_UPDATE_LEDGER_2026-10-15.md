@@ -1492,3 +1492,26 @@ Finalupdaterfollowup localfullbrowser56/56 inclbothlongworkersandfullDAW1235/123
 passed; typecheck/build/repo/security/governance/manifest112/whitespacepass.
 Originalstrictreachability/unfinishedinputassertsunchanged. Exactnewhosted/source
 reviewpending; preserve107failedhead. No installed/update-service/hardware pass.
+
+## Chordsmith contextual audition candidate
+
+The selected-bar Hear this bit/Stop controls use the existing browser transport
+and prepared Campfire bank. Visible section/bar/actual whole-bar lead-in/tail,
+optional cue/settings and actionable failure feedback are implemented. No autoplay,
+project mutation, saved fields or new engine. AudioContext-owned finite completion,
+request/source/revision guards, stale-error rejection, preserved selection/Undo and
+unfinished fields; normal section/song looping retained. See
+apps/chordsmith-web/docs/CONTEXTUAL_AUDITION_2026-10-16.md.
+
+Full138 desktop/touch browser checks passed before final internal-name/copy/native
+disclosure-marker cleanup; final contextual22/22 passed after cleanup. Final lint,
+limited module typecheck, unit4, deterministic16-fragment check and unchanged byte
+budgets pass: HTML1073923/1100000, modules899954/900000. Phone screenshot inspected;
+44px targets and no horizontal overflow verified. No physical/listening/native
+capture/installer/publication claim. Broader proposal A/B/Apply/Discard/examples,
+DJ/Godot context controls and all original final family gates remain open.
+
+PR108 updater correction is confirmed draft at
+0c89efd7734ad9314d68a6d1f33b6cd37820d2a3. Exact CI38829962766 DAW browser and
+frontend passed; Rust CodeQL still pending at this read. Prior failed PR107 head
+is preserved. Its scoped Godot correction remains independently source-accepted.

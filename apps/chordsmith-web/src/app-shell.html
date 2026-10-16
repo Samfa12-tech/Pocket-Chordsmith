@@ -65,6 +65,10 @@
   }
   .label{font-size:.8rem; color:var(--muted); margin-bottom:8px}
   .progression{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px}
+  .chord-audition{margin-top:10px; min-width:0}
+  .chord-audition :is(button,select,summary){min-height:44px}
+  .chord-audition summary{display:list-item; padding:12px 4px; cursor:pointer; color:var(--muted)}
+  .chord-audition :is(p,span){overflow-wrap:anywhere}
   .slot{border:1px solid var(--line); background:var(--panel2); border-radius:14px; min-height:82px; padding:10px; display:flex; flex-direction:column; justify-content:space-between; text-align:left; cursor:pointer}
   .slot.active{border-color:var(--accent); outline:2px solid rgba(122,162,255,.18)}
   .slot.playing{border-color:var(--accent2); box-shadow:inset 0 0 0 1px rgba(143,240,198,.4)}
@@ -359,6 +363,22 @@
         </div>
       </div>
       <div class="progression" id="progressionSlots"></div>
+      <div class="chord-audition" aria-label="Selected chord audition">
+        <div class="row">
+          <button class="pill" id="hearChordBitBtn">Hear this bit</button>
+          <button class="pill" id="stopChordBitBtn" disabled>Stop audition</button>
+          <span class="tiny" id="chordAuditionRange"></span>
+        </div>
+        <details>
+          <summary>Passage and listening cue</summary>
+          <div class="row">
+            <label class="sub">Lead-in <select id="chordAuditionLead" class="tiny-select"><option value="0">None</option><option value="1" selected>1 bar</option><option value="2">2 bars</option></select></label>
+            <label class="sub">Tail <select id="chordAuditionTail" class="tiny-select"><option value="0.5">0.5 s</option><option value="1" selected>1 s</option><option value="2">2 s</option></select></label>
+          </div>
+          <p class="tiny">Listen for bass meeting the new chord, and space between notes. Not automatically checked. Change the chord or levels; Undo reverses your last edit. Use Play section for long held notes.</p>
+        </details>
+        <p class="tiny" id="chordAuditionStatus" role="status" aria-live="polite"></p>
+      </div>
     </div>
     <div class="section">
       <div class="section-title">

@@ -15,6 +15,7 @@
     "src/audio/08-offline-renderer.js",
     "src/schema/09-rich-project.js",
     "src/transport/scheduler-recovery.js",
+    "src/transport/contextual-audition.js",
     "src/transport/10-transport.js",
     "src/ui/11-bind-init.js"
   ]

@@ -75,3 +75,11 @@ installer, and separate Godot addon itch ZIP plus official Store and Library5174
 Use fresh website main and preserve editorial commitb2469ac41f721074868b89d1fbab9ccfea56e34f.
 Reef Sweep, PR75 and dependency PRs71–74 remain untouched. Deferred contribution,
 share-code compression, deep ASIO and multitrack work remain backlog.
+
+Chordsmith contextual audition is implemented in the next isolated source slice:
+final22desktop/touch checks after copy/naming/marker cleanup pass; earlier full138
+including unchanged smoke, final lint/typecheck/unit4/deterministic/size pass.
+HTML1073923/1100000, modules899954/900000; no budget increase. See
+apps/chordsmith-web/docs/CONTEXTUAL_AUDITION_2026-10-16.md for bounded scope.
+PR108 confirmed0c89efd7734ad9314d68a6d1f33b6cd37820d2a3; exact hosted DAW browser
+and frontend pass, Rust CodeQL pending. No product publication/installed pass.
