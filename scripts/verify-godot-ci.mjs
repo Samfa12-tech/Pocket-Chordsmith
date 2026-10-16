@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { assertGodotProcessSucceeded } from "./godot-run-result.mjs";
+import { assertGodotOwnedLoaderShutdownResult } from "./godot-owned-loader-shutdown-result.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const godotBin = argument("--godot-bin");
@@ -36,7 +37,8 @@ try {
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_cache_residency_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_async_loading_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_owned_loader_test.gd", ["--audio-driver", "Dummy"]);
-  runScript("res://addons/pocket_chordsmith/tests/pcs_audio_owned_loader_shutdown_test.gd", ["--audio-driver", "Dummy"]);
+  const shutdown = runScript("res://addons/pocket_chordsmith/tests/pcs_audio_owned_loader_shutdown_test.gd", ["--audio-driver", "Dummy"]);
+  assertGodotOwnedLoaderShutdownResult(shutdown.stdout);
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_passage_audition_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_loop_clock_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_stem_origin_test.gd", ["--audio-driver", "Dummy"]);
@@ -67,7 +69,7 @@ try {
 }
 
 function runScript(script, godotArgs = [], scriptArgs = []) {
-  run([
+  return run([
     "--headless",
     ...godotArgs,
     "--path",
@@ -83,6 +85,7 @@ function run(args) {
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   assertGodotProcessSucceeded(result, `Godot ${args.join(" ")}`);
+  return result;
 }
 
 function argument(name) {
