@@ -1616,3 +1616,42 @@ Godot editor WIP is safely retained at stash2cb062cf7f5ddf25e4afbe2aed29dd549cf5
 46 new deterministic checks and the full fail-closed gate/package145 passed.
 Rendered audio/UI and actual-player finite-ending follow-through remain pending;
 no Godot candidate PR/commit yet. Existing failed performance budgets stay failed.
+
+## Godot prepared-passage editor candidate and DJ review reconciliation
+
+PR112 exact38133686f705b2ed10641cf219b52b7b714c89de is independently source accepted.
+Exact CI38836428495 and CodeQL38836428523 succeeded (both CodeQL languages).
+Hosted94 desktop/phone checks have zero skips; scheduler6 and limited crossbrowser6
+also pass. Acceptance applies to111+112; original111 alone stays held.
+
+The retained Godot WIP is now implemented on a fresh isolated branch from112.
+Optional prepared-only Hear/Stop shows section/native range, lead-in/tail and manual
+cue without autoplay or source writes. It clones source resources, reuses production
+preparation/queued transition/native seek paths, rejects stale ownership and follows
+reported player position for finite ending. Source/profile/reimport changes cancel;
+ordinary preview/jump remains available. It adds no synthesis, automatic analysis,
+crossfade/remix rewrite or meaningless proposal controls.
+
+Godot4.6.3 deterministic52checks and full fail-closed gate pass; existing async
+loading now23checks after explicit final deferred teardown/asserted consumer release.
+The gate initially caught an intermittent leaked RefCounted object despite green
+22-check/exit0; isolated verbose1of5 reproduced it. After teardown correction,
+five isolated verbose runs and full gate were clean. Prior failure log retained;
+the error/leak guard was not loosened. Addon-only package145 before the new report.
+
+Rendered OpenGL/WASAPI48k actual-main-screen scene controls fit1280x920/1100x720;
+no autoplay, Hear focus, section220-to440Hz target/end, manual Stop nonzero-to-silent.
+Both native fullmix separate/synchronized routes reproduce216000referenceframes
+from2.0to6.5s, maximumerror1.647e-6/RMS2.93e-7, reject silence mutants and end silently.
+Zero effect-capture discarded frames is not device-dropout acceptance. Native raw
+capture2 had .534708s leading all-zero preparation/frame wait (sync .022708s), so
+fixed .5s raw alignment failed. Final comparison reports/removes only proven
+leading zero frames, never fits gain/source length. Endpoint6.5s last observed
+6.696s demonstrates editor-frame stop granularity; no sample-exact endpoint claim.
+
+See addon docs/PREPARED_PASSAGE_AUDITION_2026-10-16.md and ignored local artifacts
+godot-editor-audition for exact scope, screenshots, raw fourPCM files and comparison.
+Cold/rendered budgets stay FAILED; representative game/long-session/working-set,
+device and human listening remain open. All prior final installed/scaling/version/
+advisory and reviewed publication work stays active. No new installer or public
+upload, no version/dependency/capture/security/licence/account changes.

@@ -41,6 +41,11 @@ Editor workflow:
 7. Save the compiled chart as `.tres` or `.res`.
 8. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
 
+With prepared audio assigned, open **Prepared passage and listening cue (optional)**
+to hear a finite section transition or native DAW bar passage. The visible range,
+lead-in, tail allowance and Stop apply only to that audition; opening it never
+autoplays. See [workflow and tested limits](docs/PREPARED_PASSAGE_AUDITION_2026-10-16.md).
+
 Push-to-Godot workflow from the browser app:
 
 1. In Pocket Chordsmith, open Settings > Project & export.

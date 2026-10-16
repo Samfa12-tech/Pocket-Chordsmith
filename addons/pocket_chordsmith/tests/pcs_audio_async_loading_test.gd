@@ -25,6 +25,7 @@ var failures: Array[String] = []
 var cancellation := ""
 var subject
 var requested_jobs := 0
+var checks := 0
 
 func _init() -> void:
 	_run.call_deferred()
@@ -97,12 +98,15 @@ func _run() -> void:
 	var bad = _music("res://pcs-missing-audio-fixture.wav")
 	var failed: Dictionary = await bad.prewarm_sections_async(["A"])
 	_check(not failed.ok and failed.failed == 1 and bad._audio_stream_cache.is_empty(), "Missing assets must remain incomplete and uncached.")
+	var weak_bad := weakref(bad)
 	bad.queue_free()
 	await process_frame
+	await process_frame
+	_check(weak_bad.get_ref() == null, "Final consumer must finish deferred teardown before the test quits.")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	for failure in failures:
 		push_error(failure)
-	print(JSON.stringify({"test": "audio-async-loading", "engine": Engine.get_version_info().get("string", ""), "checks": 22, "requested_jobs": requested_jobs, "cold": report, "warm": warm, "arrangement": arrangement, "failures": failures}))
+	print(JSON.stringify({"test": "audio-async-loading", "engine": Engine.get_version_info().get("string", ""), "checks": checks, "requested_jobs": requested_jobs, "cold": report, "warm": warm, "arrangement": arrangement, "failures": failures}))
 	quit(0 if failures.is_empty() else 1)
 
 func _music(path: String):
@@ -148,6 +152,7 @@ func _free_subject(job, music) -> void:
 	job.completion_released = true
 
 func _check(condition: bool, message: String) -> void:
+	checks += 1
 	if not condition:
 		failures.append(message)
 
