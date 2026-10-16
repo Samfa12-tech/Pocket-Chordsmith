@@ -14,7 +14,7 @@ djComparison=null;if(djAudition)stopPlayback({preservePerformance:true});documen
 async function djComparisonAction(action){
 const status=document.getElementById("djComparisonStatus");
 if(action==="discard"){discardDjComparison();return;}
-if(action==="stop"){stopPlayback({preservePerformance:true});renderDjComparison();return;}
+if(action==="stop"){stopPlayback({preservePerformance:true});status.textContent="Comparison stopped. A or B replays the same passage.";renderDjComparison();return;}
 if(action==="undo"){
 const edit=djComparisonUndo;if(djComparison?.example||!edit||edit.owner!==session||session.performance.stemVolumes.bass!==edit.after){status.textContent="Bass changed since Apply. Undo was not applied.";return;}
 discardDjComparison("");session.performance.stemVolumes.bass=edit.before;djComparisonUndo=null;applyMixerAndFx();autosave();renderAll();status.textContent="Undid the bass proposal. Other settings retained.";renderDjComparison();return;
@@ -36,8 +36,8 @@ const proposal=djComparison;stopPlayback({preservePerformance:true});
 djComparisonUndo={owner:session,before:proposal.a,after:proposal.b};session.performance.stemVolumes.bass=proposal.b;djComparison=null;applyMixerAndFx();autosave();renderAll();status.textContent="Bass proposal applied as one edit. Undo restores its previous level.";renderDjComparison();return;
 }
 if(action==="a"||action==="b"){
-const owner=djComparison;if(djAudition)stopPlayback({preservePerformance:true});await hearDjBit(owner[action]);
-if(djComparison===owner&&djComparisonCurrent()){status.textContent=`${owner.example?"Example":"Comparison"} ${action.toUpperCase()}, bass ${Math.round(owner[action]*100)}%. Same passage start.`;renderDjComparison();}
+const owner=djComparison;if(djAudition)stopPlayback({preservePerformance:true});const audition=await hearDjBit(owner[action]);
+if(audition&&djAudition===audition&&state.playing&&djComparison===owner&&djComparisonCurrent()){status.textContent=`${owner.example?"Example":"Comparison"} ${action.toUpperCase()}, bass ${Math.round(owner[action]*100)}%. Same passage start.`;renderDjComparison();}
 }
 }
 function bindDjComparison(){

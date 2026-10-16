@@ -2,6 +2,19 @@ import {expect,test} from '@playwright/test';
 async function open(page){await page.goto('/apps/pocket-dj/');await page.locator('#importText').fill(JSON.stringify({projectVersion:17,key:'D',scale:'major',bpm:240,timeSig:4,resolution:4,sectionBars:{A:2},songSequence:['A'],progressionA:[0,4],bassOn:true,chordsOn:true}));await page.locator('#importBtn').click();await page.waitForFunction(()=>session?.deck);await page.locator('#djComparison summary').click();}
 const button=(page,action)=>page.locator(`#djComparison [data-compare=${action}]`);
 const source=page=>page.evaluate(()=>JSON.stringify(exportPocketDjSession(session)));
+test('late preparation rejection after Stop cannot replace the stopped comparison status',async({page})=>{
+await open(page);await button(page,'prepare').click();await page.evaluate(()=>{preparePocketDjCampfire=()=>new Promise((resolve,reject)=>{window.__reject=()=>reject(new Error('old request rejected'));});});await button(page,'b').click();await page.waitForFunction(()=>!!window.__reject);await button(page,'stop').click();const stopped=await page.locator('#djComparisonStatus').textContent();await page.evaluate(()=>window.__reject());await page.waitForTimeout(80);expect(await page.evaluate(()=>state.playing)).toBe(false);await expect(page.locator('#djComparisonStatus')).toHaveText(stopped);
+});
+test('late B preparation cannot relabel current A or announce playback after Stop',async({page})=>{
+await open(page);await page.locator('#djComparisonBass').fill('35');await button(page,'prepare').click();
+await page.evaluate(()=>{window.__pending=[];preparePocketDjCampfire=()=>new Promise(resolve=>window.__pending.push(()=>resolve(true)));});
+await button(page,'b').click();await page.waitForFunction(()=>window.__pending.length===1);
+await button(page,'a').click();await page.waitForFunction(()=>window.__pending.length===2);await page.evaluate(()=>window.__pending[1]());await page.waitForFunction(()=>state.playing);
+const a=await page.locator('#djComparisonStatus').textContent();expect(a).toContain('Comparison A');const level=await page.evaluate(()=>djAudition.compareBass);
+await page.evaluate(()=>window.__pending[0]());await page.waitForTimeout(80);expect(await page.evaluate(()=>djAudition.compareBass)).toBe(level);await expect(page.locator('#djComparisonStatus')).toHaveText(a);
+await button(page,'b').click();await page.waitForFunction(()=>window.__pending.length===3);await button(page,'stop').click();const stopped=await page.locator('#djComparisonStatus').textContent();await page.evaluate(()=>window.__pending[2]());await page.waitForTimeout(80);
+expect(await page.evaluate(()=>state.playing)).toBe(false);await expect(page.locator('#djComparisonStatus')).toHaveText(stopped);
+});
 test('A/B uses actual mixer override and same passage; Apply and one Undo preserve other settings',async({page})=>{
 await open(page);const before=await source(page);await page.locator('#djComparisonBass').fill('35');await button(page,'prepare').click();expect(await page.evaluate(()=>state.playing)).toBe(false);
 await button(page,'a').click();await page.waitForFunction(()=>state.playing);const a=await page.evaluate(()=>({start:djAudition.start,level:comparisonBassVolume(session.performance.stemVolumes.bass)}));

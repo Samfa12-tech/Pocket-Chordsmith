@@ -80,3 +80,38 @@ embedded worker source-path comments a different spelling. The canonical app
 Main script and both decompressed embedded payloads had identical JavaScript
 token types and values before/after canonical normalization. Exact packaged ZIP
 validation and independent review are separate release gates.
+
+## Independent-review corrections
+
+The reviewed v70/v1i source remains preserved at
+`87cc32ce81c050b9613fc9c84b4cb98a5ba639c9`. New regressions reproduced three
+ownership failures: late preparation could announce the wrong/stopped side in
+both apps; a same-chord no-op history entry consumed Chordsmith's panel Undo;
+and normal Stop semantics changed an idle selected B/C section back to stale A.
+
+Playback announcements now require the specific returned audition context to
+remain active and playing. Stop sets an explicit comparison status. Comparison
+transitions use Chordsmith's existing preserving audition-stop semantics. The
+Undo record validates its Apply history prefix and current source; it removes
+only trailing identical-source no-op snapshots before undoing that Apply.
+Unrelated later history/source changes disable this scoped Undo without editing
+or erasing them. Existing ordinary editor Undo remains available.
+
+Desktop/touch regressions include delayed B versus A, completion/rejection after
+Stop, same-chord no-op and unrelated edits, and stopped B/C source/range/first
+scheduled-section preservation. Earlier failed runs and fixture corrections
+remain separate local evidence. These fixes require new candidate packages and
+independent re-review; the prior ZIPs do not inherit their acceptance.
+
+Corrected local suites passed Chordsmith 174 desktop/touch checks with the
+established two-worker configuration and DJ 112 checks. Focused ownership tests
+passed 24/18 desktop/touch and 12/9 Firefox. Existing cross-browser baseline
+checks passed 8/6. A preceding default-parallel local Chordsmith run passed 172
+but failed two held-bass checks at their unchanged 800 ms nonzero-PCM deadline;
+the complete bounded repeat passed all 174. That failed run remains retained;
+no threshold was relaxed or product cause inferred from the repeat alone.
+
+Original-head hosted counts remain distinct: CI38888034223 had Chordsmith 166
+desktop/touch E2E, five desktop genre-audio and eight baseline cross-browser;
+DJ 108 E2E and six baseline; Core 213, all 13 jobs and both CodeQL languages
+green. New-head hosted acceptance must be checked separately.

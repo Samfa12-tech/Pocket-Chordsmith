@@ -57,6 +57,7 @@ async function hearDjBit(compareBass=null){
   djAudition=context; renderDjAudition(); setDjAuditionStatus("Preparing. Stop cancels.");
   await startPlayback(context);
   if(djAudition===context && !state.playing){djAudition=null;renderDjAudition();setDjAuditionStatus("Passage changed. Hear this bit again.");}
+  return context;
 }
 function bindDjAudition(){
   bindDjComparison();

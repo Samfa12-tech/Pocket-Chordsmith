@@ -7,6 +7,23 @@ await page.locator('#chordComparison summary').click();await page.locator('#chor
 }
 const button=(page,action)=>page.locator(`#chordComparison [data-compare=${action}]`);
 const source=page=>page.evaluate(()=>JSON.stringify(exportProject()));
+test('late preparation rejection after Stop cannot replace the stopped comparison status',async({page})=>{
+await open(page);await button(page,'prepare').click();await page.evaluate(()=>{prepareChordsmithCampfirePlayback=()=>new Promise((resolve,reject)=>{window.__reject=()=>reject(new Error('old request rejected'));});});await button(page,'b').click();await page.waitForFunction(()=>!!window.__reject);await button(page,'stop').click();const stopped=await page.locator('#chordComparisonStatus').textContent();await page.evaluate(()=>window.__reject());await page.waitForFunction(()=>!transportBusy);expect(await page.evaluate(()=>state.isPlaying)).toBe(false);await expect(page.locator('#chordComparisonStatus')).toHaveText(stopped);
+});
+test('proposal Undo owns its history entry through a same-chord no-op and refuses unrelated edits',async({page})=>{
+await open(page);const before=await source(page);await button(page,'prepare').click();await button(page,'apply').click();
+// Use the actual currently selected chord button; choosing that chord still records an Undo snapshot.
+const current=await page.evaluate(()=>state.progression[state.selectedSlot].degree);await page.locator('#chordPalette button').nth(current).click();
+await button(page,'undo').click();expect(await page.evaluate(()=>state.chordPlayMode)).toBe('block');expect((await source(page))===before).toBe(true);
+await page.locator('#chordComparisonMode').selectOption('arp_up');await button(page,'prepare').click();await button(page,'apply').click();await page.locator('#bpmInput').fill('211');await page.locator('#bpmInput').dispatchEvent('change');
+const changed=await source(page),history=await page.evaluate(()=>JSON.stringify(state.undoStack));await expect(button(page,'undo')).toBeDisabled();expect(await source(page)).toBe(changed);expect(await page.evaluate(()=>JSON.stringify(state.undoStack))).toBe(history);
+});
+for(const section of ['B','C'])test(`stopped ${section} comparison preserves selected source and first scheduled section`,async({page})=>{
+await open(page);await page.evaluate(section=>{state.sectionBars[section]=2;},section);await page.locator('#sectionChips button').filter({hasText:new RegExp(`^${section}$`)}).click();await page.locator('#progressionSlots .slot').nth(1).click();
+const before=await source(page);await button(page,'prepare').click();expect(await source(page)).toBe(before);expect(await page.evaluate(()=>state.currentSection)).toBe(section);await expect(page.locator('#chordAuditionRange')).toContainText(`Section ${section}, bar 2`);
+await button(page,'discard').click();expect(await source(page)).toBe(before);await page.locator('#chordComparisonMode').selectOption('arp_down');expect(await source(page)).toBe(before);
+await page.evaluate(()=>{window.__sections=[];const schedule=schedulePlanStep;schedulePlanStep=(item,time)=>{window.__sections.push(chordAudition?.section);schedule(item,time);};});await button(page,'example-b').click();await page.waitForFunction(()=>window.__sections.length>0);expect(await page.evaluate(()=>window.__sections[0])).toBe(section);await button(page,'stop').click();expect(await source(page)).toBe(before);
+});
 test('proposal compares real scheduler modes from the same start, applies once and undoes',async({page})=>{
 await open(page);const before=await source(page);const undo=await page.evaluate(()=>state.undoStack.length);
 await page.evaluate(()=>{window.__compareSteps=[];const schedule=schedulePlanStep;schedulePlanStep=(item,time)=>{window.__compareSteps.push({step:item.step,mode:comparisonChordMode(),time});schedule(item,time);};});
@@ -32,7 +49,9 @@ await button(page,'b').click();await page.waitForFunction(()=>!!window.__release
 if(change==='stop')await button(page,'stop').click();
 if(change==='selection')await page.locator('#progressionSlots .slot').first().click();
 if(change==='edit')await page.locator('#chordComparisonMode').selectOption('arp_down');
+const status=await page.locator('#chordComparisonStatus').textContent();
 await page.evaluate(()=>window.__release());await page.waitForFunction(()=>!transportBusy);expect(await page.evaluate(()=>state.isPlaying)).toBe(false);expect(await source(page)).toBe(before);
+await expect(page.locator('#chordComparisonStatus')).toHaveText(status);
 });
 test('record-armed guards and keyboard/touch controls preserve project',async({page})=>{
 await open(page);const before=await source(page);await page.evaluate(()=>{state.drumRecordToGrid=true;});await button(page,'prepare').click();await expect(page.locator('#chordComparisonStatus')).toContainText('Stop recording');

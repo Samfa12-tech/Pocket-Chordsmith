@@ -59,6 +59,7 @@ try{
   if(chordAudition===context&&!state.isPlaying) clearChordAudition(context.error||"Not played. Hear this bit again.");
   renderAuditionUi();
 }
+return context;
 }
 function checkChordAuditionClock(){
 const context=chordAudition;
