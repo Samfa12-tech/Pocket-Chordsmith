@@ -44,3 +44,33 @@ are preserved. A reviewed replacement requires a new version and one-pass
 candidate preparation, followed by actual native selection, Cancel, Stop/status
 responsiveness and current-project preservation checks. Other native dialogs are
 outside this bounded correction. No publication or merge is implied.
+
+## App ownership review follow-up
+
+Independent review reproduced two gaps in the first source candidate: pending
+Web MIDI access was invisible to the picker guard, and delayed recovery discovery
+could display an old file's modal prompt after project replacement. The outer
+guard prevented the latter project load, but did not prevent the stale prompt.
+
+MIDI startup now takes its own generation before awaiting access and exposes a
+pending flag to project Open. Duplicate starts are suppressed; MIDI Record again
+or MIDI Stop cancels preparation. Project reset invalidates pending startup and
+detaches its active MIDI handler. Access, error and transport completions check
+project/track/generation ownership, so an old request cannot attach a handler or
+clear a newer session. The picker also snapshots this generation. Recovery
+discovery checks the same guard before prompting or reporting errors; a late
+picker error cannot replace a newer project's status either.
+
+The regression suite imports and calls the actual App methods, including project
+reset, native-open recovery and MIDI startup. Only device access, picker and UI
+rendering boundaries are substituted; method bodies and isCurrent are not copied
+or mocked. The exact prior source fails twelve of thirteen cases while its normal
+positive control passes. Corrected source passes all thirteen plus six coordinator
+checks; the full PR source scope passes 1,254 tests in 108 files and TypeScript.
+An existing constructor-bypassing bridge harness was initialized with the new
+fields after its two MIDI cases exposed missing fixture state; assertions remain.
+
+These are source integration regressions, not native MIDI/device acceptance.
+Capture fingerprint is unchanged. No Rust code, frozen installer, running app or
+source head under independent review was modified. A replacement build remains
+held until this separately reviewable follow-up is accepted.

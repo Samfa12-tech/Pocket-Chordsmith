@@ -1743,3 +1743,14 @@ See apps/pocket-daw/docs/NATIVE_PROJECT_PICKER_FIX_2026-10-16.md. No frozen0.6.5
 artifact changed, no new installer or publication. Exact updated Windows picker
 acceptance is pending. Capture fingerprint unchanged; fresh hands-on mic is a
 scoped omission, not passed; future exact-install PCM/MIDI/export remains required.
+
+### Project Open ownership review correction (source follow-up)
+
+The first picker candidate missed pending Web MIDI startup and stale recovery
+prompts. A separate follow-up tracks MIDI preparation generation/pending state,
+invalidates Stop/reset, checks ownership after access/transport/errors and guards
+recovery prompts/errors immediately after discovery. Actual imported App-method
+regressions reject prior source12/13 with1positivecontrol; finalsource13/13 and
+sixcoordinatorchecks pass. Full PR source1254/108files andTypeScript pass. No native
+Rust changes or updated installed-device acceptance claimed. Frozen0.6.51 remains
+held; independent source review is required before a new-version candidate.

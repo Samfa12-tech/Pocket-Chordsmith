@@ -34,7 +34,7 @@ export class ProjectFileOpen {
       if (result.mode === "unavailable") options.openBrowser();
       else await options.openNative(result.project, options.isCurrent);
     } catch (error) {
-      options.report(error instanceof Error ? `Native open failed: ${error.message}` : "Native open failed. Try opening the file again.");
+      if (options.isCurrent()) options.report(error instanceof Error ? `Native open failed: ${error.message}` : "Native open failed. Try opening the file again.");
     } finally {
       this.pending = false;
     }

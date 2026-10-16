@@ -481,6 +481,8 @@ export class App {
   private recordingStatusBusy = false;
   private recordingPunchOutStopRequested = false;
   private midiInputPunchOutStopRequested = false;
+  private midiInputStartToken = 0;
+  private midiInputStartPending = false;
   private inputPreviewKey: string | null = null;
   private midiInputRecordingRuntime: MidiInputRecordingRuntime | null = null;
   private aiBridgeUnlisten: (() => void) | null = null;
@@ -5085,12 +5087,12 @@ export class App {
   }
 
   private async toggleMidiInputRecording() {
-    if (this.state.midiInputRecording.status === "recording") await this.stopMidiInputRecording();
+    if (this.midiInputStartPending || this.state.midiInputRecording.status === "recording") await this.stopMidiInputRecording();
     else await this.startMidiInputRecording();
   }
 
   private async startMidiInputRecording() {
-    if (this.state.midiInputRecording.status === "recording") return;
+    if (this.midiInputStartPending || this.state.midiInputRecording.status === "recording") return;
     const project = currentProject(this.state);
     if (this.state.recording.status !== "idle" && this.state.recording.status !== "error") {
       this.setMidiInputRecordingError("Stop audio recording before starting MIDI input recording.");
@@ -5116,8 +5118,17 @@ export class App {
       this.setMidiInputRecordingError("Move the playhead to or before the punch-in bar before recording MIDI input.");
       return;
     }
+    const startToken = ++this.midiInputStartToken;
+    this.midiInputStartPending = true;
+    const ownsStart = () => startToken === this.midiInputStartToken
+      && currentProject(this.state) === project
+      && project.tracks.some(item => item.id === track.id && item.trackType === "midi")
+      && (this.state.recording.status === "idle" || this.state.recording.status === "error");
+    this.state.status = "Preparing MIDI input. Press MIDI Record again to cancel.";
+    this.render({ preserveScroll: true });
     try {
       const access = await promiseWithTimeout(requestMIDIAccess({ sysex: false }), 2500, "Web MIDI input request timed out.");
+      if (!ownsStart()) return;
       const input = firstWebMidiInput(access);
       if (!input) {
         this.setMidiInputRecordingError("No MIDI input devices are available.");
@@ -5153,16 +5164,26 @@ export class App {
         this.seekToBar(startBar, true);
         await this.playTransport();
       }
+      if (!ownsStart()) return;
       this.render({ preserveScroll: true });
     } catch (error) {
-      this.setMidiInputRecordingError(error instanceof Error ? error.message : "Could not start MIDI input recording.");
+      if (ownsStart()) this.setMidiInputRecordingError(error instanceof Error ? error.message : "Could not start MIDI input recording.");
+    } finally {
+      if (startToken === this.midiInputStartToken) this.midiInputStartPending = false;
     }
   }
 
   private async stopMidiInputRecording() {
+    const wasPending = this.midiInputStartPending;
+    this.midiInputStartToken += 1;
+    this.midiInputStartPending = false;
     const runtime = this.midiInputRecordingRuntime;
     if (!runtime) {
       this.state.midiInputRecording = createMidiInputRecordingUiState();
+      if (wasPending) {
+        this.state.status = "MIDI input preparation cancelled.";
+        this.render({ preserveScroll: true });
+      }
       return;
     }
     runtime.input.onmidimessage = null;
@@ -6594,7 +6615,7 @@ export class App {
   }
 
   private async openProject() {
-    const recordingBusy = () => projectOpenRecordingBusy(this.state.recording.status, this.state.midiInputRecording.status);
+    const recordingBusy = () => this.midiInputStartPending || projectOpenRecordingBusy(this.state.recording.status, this.state.midiInputRecording.status);
     if (recordingBusy()) {
       this.state.status = "Stop recording before opening another project.";
       this.render();
@@ -6603,9 +6624,10 @@ export class App {
     const project = currentProject(this.state);
     const file = this.state.currentFile;
     const recordingToken = this.recordingStartToken;
+    const midiStartToken = this.midiInputStartToken;
     await this.projectFileOpen.open({
       select: () => openProjectFileNative(),
-      isCurrent: () => currentProject(this.state) === project && this.state.currentFile === file && this.recordingStartToken === recordingToken && !recordingBusy(),
+      isCurrent: () => currentProject(this.state) === project && this.state.currentFile === file && this.recordingStartToken === recordingToken && this.midiInputStartToken === midiStartToken && !recordingBusy(),
       openNative: (native, isCurrent) => this.openNativeProjectWithRecovery(native, undefined, true, isCurrent),
       openBrowser: () => this.fileInput.click(),
       report: (message) => { this.state.status = message; this.render(); }
@@ -6622,7 +6644,7 @@ export class App {
       }
       return;
     }
-    const recovery = promptRecovery ? await this.recoveryCandidateForOpen(native.file.path) : null;
+    const recovery = promptRecovery ? await this.recoveryCandidateForOpen(native.file.path, isCurrent) : null;
     if (!isCurrent()) return;
     if (recovery) {
       const recovered = await readProjectFileNative(recovery.path);
@@ -6637,10 +6659,11 @@ export class App {
     await this.openRawProjectText(native.contents, native.file.label, native.file.path, status ? { status } : undefined);
   }
 
-  private async recoveryCandidateForOpen(path: string | null): Promise<NativeProjectRecoveryCandidate | null> {
+  private async recoveryCandidateForOpen(path: string | null, isCurrent = () => true): Promise<NativeProjectRecoveryCandidate | null> {
     if (!path) return null;
     try {
       const state = await discoverProjectRecoveryNative(path);
+      if (!isCurrent()) return null;
       const recommendation = projectRecoveryRecommendation(state);
       if (!recommendation.candidate) return null;
       const candidate = state?.[recommendation.candidate] || null;
@@ -6652,6 +6675,7 @@ export class App {
       );
       return useRecovery ? candidate : null;
     } catch (error) {
+      if (!isCurrent()) return null;
       this.state.status = error instanceof Error ? `Recovery check failed: ${error.message}` : "Recovery check failed.";
       this.render({ preserveScroll: true });
       return null;
@@ -7823,6 +7847,10 @@ export class App {
   }
 
   private cancelNativeInputForProjectReset() {
+    this.midiInputStartToken += 1;
+    this.midiInputStartPending = false;
+    if (this.midiInputRecordingRuntime) this.midiInputRecordingRuntime.input.onmidimessage = null;
+    this.midiInputRecordingRuntime = null;
     const shouldStopCapture = this.state.recording.status === "recording" || this.state.recording.status === "stopping";
     this.recordingStartToken += 1;
     this.inputPreviewKey = null;
