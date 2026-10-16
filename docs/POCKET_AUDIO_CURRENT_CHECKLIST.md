@@ -18,7 +18,7 @@ No new product candidate has been published.
 | Godot | Both Core/Chordsmith and fully arranged native DAW routes; bounded float32-to-PCM16 captures, threaded loading/cancellation; optional prepared-passage editor Hear/Stop with rendered bus evidence | Editor candidate review/hosted gate; cold preparation and rendered worst-frame budgets failed; representative game, long-session, working-set, dropout/listening evidence and version reconciliation |
 | DAW safeguards | Existing save/Undo/media/plugin foundations retained; menu, focus and overflow corrections | Dense-session popovers/shortcuts and actual Windows scaling |
 | Installed candidate | No new installer built; source/browser/PCM evidence kept separate | One reviewed exact candidate, eligible retained capture baseline, real current exports, loopMIDI/device/output/listening checks |
-| Release truth | DAW source 0.6.51/public 0.6.50; Core 0.2.0/Godot 1.2.0 remain separate version domains | Final versions/family manifest/current advisory applicability; Godot advertised 4.4 versus tested 4.6.3 |
+| Release truth | Candidates Chordsmithv69/DJv1h/Core0.3.0/Godot1.3.0; DAWsource0.6.51. Verified public Chordv68/DJv1g/Godot1.2/DAW0.6.50 remain unchanged | Candidate metadata/source review; exact installed acceptance; Godot listing must use tested4.6.3 scope, not old4.4 claim |
 
 PR108 exact `0c89efd7734ad9314d68a6d1f33b6cd37820d2a3` is source accepted.
 CI38829962766 and CodeQL38829962684 succeeded. Six CI jobs ran and seven

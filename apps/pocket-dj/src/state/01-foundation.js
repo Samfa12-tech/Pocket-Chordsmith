@@ -13,7 +13,7 @@ const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
 const HANDOFF_TO_CHORDSMITH_KEY = "pocket_dj_to_chordsmith_handoff_v1";
 const POCKET_DJ_VERSION = 1;
 const PROJECT_SCHEMA_VERSION = 17;
-const POCKET_AUDIO_CORE_VERSION = "0.2.0";
+const POCKET_AUDIO_CORE_VERSION = "0.3.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17 (16 compatible)";
 const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
   "../../packages/pocket-audio-core/dist/pocket-audio-core.browser.esm.js",

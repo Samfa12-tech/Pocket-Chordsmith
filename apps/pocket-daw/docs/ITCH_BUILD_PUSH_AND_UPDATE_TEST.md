@@ -8,7 +8,7 @@ Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases a
 
 - App: Pocket DAW
 - Current version/source/public status: see `release-status.json` and generated `docs/CURRENT_RELEASE_STATUS.md`
-- Schema version: `2`
+- Schema version: `3` (read the current `src/daw/schema.ts` contract)
 - Itch project: `samfa12/pocket-daw`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Public site link: `https://samfa12.com`

@@ -2,7 +2,12 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.2.0`, with PCS schema-17 profile identity, expressive-event preservation, capability/loss diagnostics, Funk/Western/Chiptune/Heavy Metal preview aliases, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
+Source candidate: `1.3.0`; latest public release: `1.2.0`. The candidate adds Campfire Acoustic, prepared loading/audition and fully arranged native DAW pack playback while preserving PCS schema-17 identity, expressive events and legacy imports.
+
+Candidate runtime validation uses Godot `4.6.3`. Candidate Store/Library metadata
+must target the tested `4.6` line; the public `4.4` listing describes the older
+release and is not a compatibility claim for this candidate. Runtime performance,
+installed/device and listening limits remain in `docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md`.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.

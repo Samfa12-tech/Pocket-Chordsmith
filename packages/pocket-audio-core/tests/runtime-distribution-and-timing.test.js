@@ -130,7 +130,7 @@ test("dist artifacts are self-contained and publish a generated API manifest", a
     assert.doesNotMatch(source, /(?:from|import\()\s*["']\.\.\/src\//);
   }
   const manifest = JSON.parse(await readFile(new URL("../dist/api-manifest.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.3.0");
   assert.equal(manifest.generatedFrom, "src/index.js");
   assert.equal(manifest.sourcemaps, false);
   assert.ok(manifest.exports.includes("PocketAudio"));

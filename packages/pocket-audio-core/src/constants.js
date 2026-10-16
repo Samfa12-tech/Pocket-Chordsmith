@@ -1,4 +1,4 @@
-export const POCKET_AUDIO_CORE_VERSION = "0.2.0";
+export const POCKET_AUDIO_CORE_VERSION = "0.3.0";
 export const CORE_PROJECT_VERSION = 1;
 export const PCS_SHARE_PREFIX = "PCS1:";
 export const DEFAULT_SOURCE_SCHEMA_VERSION = 16;

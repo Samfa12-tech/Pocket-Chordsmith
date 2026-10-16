@@ -12,7 +12,7 @@ const outputZip = resolve(outputDir, "pocket-chordsmith-web.zip");
 const bestzipCli = resolve(appRoot, "node_modules", "bestzip", "bin", "cli.js");
 const requiredEntries = [
   "index.html",
-  "pocket_chordsmith_v68_core_bridge.html",
+  "pocket_chordsmith_v69_core_bridge.html",
   "icon.png",
   "pocket-audio-core/dist/api-manifest.json",
   "pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
@@ -111,11 +111,11 @@ run(process.execPath, [
   resolve(repoRoot, "scripts", "web-release-provenance.mjs"),
   "--repoRoot", repoRoot,
   "--product", "Pocket Chordsmith",
-  "--build", "v68",
+  "--build", "v69",
   "--schema", "17",
   "--legacySchema", "16",
-  "--core", "0.2.0",
-  "--sourceEntry", "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html",
+  "--core", "0.3.0",
+  "--sourceEntry", "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html",
   "--zip", relative(repoRoot, outputZip),
   "--output", "local-artifacts/staging/chordsmith-web/pocket-chordsmith-web.release.json",
   ...requiredEntries.flatMap((entry) => ["--required", entry]),

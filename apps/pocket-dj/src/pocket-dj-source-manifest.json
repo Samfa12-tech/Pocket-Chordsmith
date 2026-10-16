@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "output": "pocket_dj_v1g_core_bridge.html",
+  "output": "pocket_dj_v1h_core_bridge.html",
   "fragments": [
     "src/state/01-foundation.js",
     "src/handoff/02-transfer.js",

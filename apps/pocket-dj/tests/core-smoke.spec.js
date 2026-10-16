@@ -64,7 +64,7 @@ test("Campfire missing prepared Core fails explicitly without amplifier fallback
 });
 
 test("standalone Campfire strum and pick survives saved DJ sessions without changing the source grid", async ({ page }) => {
-  await page.goto(pathToFileURL(resolve(import.meta.dirname,"..","pocket_dj_v1g_core_bridge.html")).href);
+  await page.goto(pathToFileURL(resolve(import.meta.dirname,"..","pocket_dj_v1h_core_bridge.html")).href);
   await requireLiveBrowserAudio(page);
   const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPerformanceA:"strum_pick",sectionBars:{A:4},songSequence:["A"],progressionA:[0,0,3,3],guitarPatternA:["scratch"],future:{keep:true}};
   await page.locator("#importText").fill(JSON.stringify(source));
@@ -656,7 +656,7 @@ test("loads demo deck through Pocket Audio Core", async ({ page }) => {
   await expect(page.locator("#statusText")).toContainText("Demo deck loaded");
 
   const audioCoreCard = page.locator(".meta-card", { hasText: "Audio Core" });
-  await expect(audioCoreCard).toContainText("0.2.0");
+  await expect(audioCoreCard).toContainText("0.3.0");
   await expect(audioCoreCard).toContainText(/events|ready/);
   await expect(audioCoreCard).not.toContainText(/legacy audio active/i);
 });

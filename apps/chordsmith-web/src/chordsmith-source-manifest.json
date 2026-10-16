@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "output": "pocket_chordsmith_v68_core_bridge.html",
+  "output": "pocket_chordsmith_v69_core_bridge.html",
   "fragments": [
     "src/state/01-foundation.js",
     "src/handoff/02-transfer.js",

@@ -104,7 +104,7 @@ async function buildBrowserTrace(project) {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
-    await page.goto(pathToFileURL(join(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html")).href, {
+    await page.goto(pathToFileURL(join(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html")).href, {
       waitUntil: "load"
     });
     await page.waitForFunction(
@@ -129,7 +129,7 @@ async function buildBrowserVoiceMetrics(project) {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
-    await page.goto(pathToFileURL(join(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html")).href, {
+    await page.goto(pathToFileURL(join(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html")).href, {
       waitUntil: "load"
     });
     await page.waitForFunction(

@@ -82,8 +82,8 @@ import {
 const repoRoot = new URL("../../../", import.meta.url);
 
 const surfaces = {
-  chordsmith: new URL("apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html", repoRoot),
-  pocketDj: new URL("apps/pocket-dj/pocket_dj_v1g_core_bridge.html", repoRoot),
+  chordsmith: new URL("apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html", repoRoot),
+  pocketDj: new URL("apps/pocket-dj/pocket_dj_v1h_core_bridge.html", repoRoot),
   pocketDawDrumPresets: new URL("apps/pocket-daw/src/daw/chordsmithDrumPresets.ts", repoRoot),
   pocketDawFx: new URL("apps/pocket-daw/src/daw/fx.ts", repoRoot),
   pocketDawInstruments: new URL("apps/pocket-daw/src/audio/instruments.ts", repoRoot),

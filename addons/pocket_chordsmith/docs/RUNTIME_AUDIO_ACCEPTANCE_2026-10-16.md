@@ -130,3 +130,49 @@ warnings remain distinct from unexpected runtime errors. Local corrected loading
 checks and the fail-closed full Godot gate passed; exact follow-up hosted/source
 review remains pending. Prior float-conversion and failed performance-budget
 evidence remains scoped to its retained source/captures and is not upgraded.
+
+### Independent correction-review caveat
+
+PR114's original shared-bus and early pre-I/O destruction probes independently
+pass on `e95352c72182bcbcbeeee060f50dd40bbaa76911`; hosted82audition/23async/package147
+is clean. Independent review also retained one intermittent ObjectDB warning
+after an otherwise82-pass isolated suite, followed by eleven clean reruns.
+That warning is unresolved, not diagnosed or erased by the clean repetitions.
+Unexpected leaks remain a failed run under the unchanged guard. Inspect teardown
+if it reproduces on the final candidate; no universal leak acceptance is claimed.
+
+### Final-candidate reproduction and engine-only control
+
+The source-version 1.3.0 gate reproduced that warning after 82 passing audition
+assertions. The unchanged fail-closed runner rejected the run. Twelve subsequent
+isolated audition runs were clean; they do not clear the failed gate.
+
+A separate, fresh Godot 4.6.3 project loads no Pocket Audio scripts, audio players
+or effects. It saves and retrieves 512 ordinary Resource files. Sequential runs,
+with separate fixture names, produced:
+
+| Loader control | Successful results | Zero-reference leaked instances | Result |
+| --- | --- | --- | --- |
+| Threaded request/status/get, immediate get | 512 | 513 | Failed ObjectDB teardown |
+| Synchronous load | 512 | 0 | Clean teardown |
+| Threaded request/status/get, one process frame before get | 512 | 8 | Failed ObjectDB teardown |
+
+These counts describe these diagnostic runs, not a general leak rate. Their
+bounded hot polling is deliberately a diagnostic stress pattern, not the addon's
+gameplay loading pattern. Earlier controls with overlapping fixture writes were
+discarded; the table uses sequential, isolated runs only. All raw logs and the
+minimal project are retained in the local release-preflight evidence.
+
+An additional immediate-get run drained ten process frames after all 512 loads
+before quitting; it still leaked 513 zero-reference instances. The warning is
+therefore not cleared by that bounded end-of-test frame drain either.
+
+This establishes an engine-only reproduction of the same warning/class, not
+proof that every addon teardown warning has that cause. Inspection of the
+[4.6.3 loader implementation](https://github.com/godotengine/godot/blob/4.6.3-stable/core/io/resource_loader.cpp)
+suggests a LoadToken final-reference race around worker completion; that remains
+an inference requiring upstream confirmation. A single-frame delay is demonstrably
+insufficient. No engine patch, arbitrary delay, synchronous gameplay fallback or
+warning suppression was added. Godot publication remains held for this failed
+gate and the separate runtime/performance acceptance limits above; independent
+web/native candidate preparation can continue.

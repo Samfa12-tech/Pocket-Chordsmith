@@ -39,7 +39,7 @@
     "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module ESNext --moduleResolution bundler src/genre-composer.js src/wav-export-preflight.js",
     "format": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --write",
     "format:check": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --check",
-    "report:size": "node ../../scripts/report-web-surface.mjs --product Chordsmith --app . --active pocket_chordsmith_v68_core_bridge.html --maxActiveBytes 1100000 --maxModuleBytes 900000",
+    "report:size": "node ../../scripts/report-web-surface.mjs --product Chordsmith --app . --active pocket_chordsmith_v69_core_bridge.html --maxActiveBytes 1100000 --maxModuleBytes 900000",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run test:unit && npm run test:composer && npm run test:audio-quality && npm run report:size && npm run verify:single-file && npm run test:e2e && npm run test:cross-browser && npm run build",
     "package:itch": "npm run build && node scripts/package-itch.mjs"
   },

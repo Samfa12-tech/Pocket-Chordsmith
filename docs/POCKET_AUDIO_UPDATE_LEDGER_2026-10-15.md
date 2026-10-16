@@ -1699,3 +1699,35 @@ one14-check browser suite initially unavailable due omitted browser path, then
 14/14passes with installed path. Original failed invocation retained, not relabeled.
 TypeScript/Vite and root26pass. See DAWdocs/PASSIVE_READINESS_FOCUS_2026-10-16.md.
 No native/capture/dependency/version or installer/publication changes.
+
+## Candidate version truth and exact scoped browser acceptance
+
+PR115 `656b52069bedf1d3e5d437468758b32ba29124e7` has independently accepted
+source and terminal CI38841346293/CodeQL38841346391, both languages. Hosted DJ94
+desktop/phone plus cross-browser6 pass; DAW browser57 pass/two intentional
+production-worker skips, source1235/106 pass. Local DAW59/59 is a separate scope.
+This clears PR113's affected browser failures on the corrected stack only.
+
+Source candidates now identify Core0.3.0, Chordsmithv69, DJv1h and Godot1.3.0.
+DAW retains unused0.6.51. Public/deployed identifiers remain unchanged; Core
+stays private/repository-only, schemas and legacy musical IDs are unchanged.
+All213 Core checks pass without regenerating old golden fixtures. Chordsmith
+browser155 pass/five intentional phone genre-metric skips; DJ94/94; DAW source
+1235/106 pass. DJlint/limited-types/format/scheduler6/deterministic packaging
+and root26/governance/organization/security/sound-contract/workflow pins pass.
+One Chordsmith unit invocation failed temp-directory permissions before running
+tests; the corrected writable-temp invocation passes4/4. Fresh five npm audits
+are clean, source-map-js remains1.2.2; no dependency updates were made. Locked
+Windows cargo graph has no glib; affected Linux graph remains explicitly open.
+
+Godot1.3 source-version full gate FAILED ObjectDB after82 passing audition
+assertions; twelve clean repetitions do not clear it. A separate pure Godot4.6.3
+loader reproduction has512 correct results but513 zero-ref leaks with immediate
+threaded get, zero with synchronous load, eight with one-frame deferred get.
+Ten final process frames still leave513 in a separate threaded run. Engine
+LoadToken race is an inference, not an upstream-confirmed cause for every warning.
+No production workaround or warning suppression. Godot publication remains held.
+See runtime acceptance and docs/FAMILY_RELEASE_CANDIDATES_2026-10-16.md for exact
+scope, candidate/public truth and remaining gates. No public upload or exact
+installed candidate pass is claimed by these source checks. Website work must
+preserve b2469ac41f721074868b89d1fbab9ccfea56e34f from fresh website main.

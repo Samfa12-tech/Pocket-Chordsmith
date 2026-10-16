@@ -172,7 +172,7 @@ test("Campfire strum and pick preserves the grid and exports the canonical notes
 
 test("standalone Campfire cancels cold Play and reuses prepared tails during live edits", async ({ page }) => {
   await requireLiveBrowserAudio(page);
-  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v68_core_bridge.html")).href);
+  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v69_core_bridge.html")).href);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.locator("#settingsBtn").click();
@@ -385,7 +385,7 @@ function noteEvents(tick, channel, note, velocity, duration = 120) {
 }
 
 test("loads the main app controls", async ({ page }) => {
-  await expect(page).toHaveURL(/pocket_chordsmith_v68_core_bridge\.html/);
+  await expect(page).toHaveURL(/pocket_chordsmith_v69_core_bridge\.html/);
   await expect(
     page.getByRole("heading", { name: "Pocket Chordsmith" }),
   ).toBeVisible();
@@ -676,7 +676,7 @@ test("forced colors retains a strong visible keyboard focus indicator", async ({
 test("demo button loads the bundled starter song", async ({ page }) => {
   await page.getByRole("button", { name: "Demo" }).click();
   await expect(page.locator("#statusText")).toContainText(
-    "Loaded Pocket Chordsmith v68 demo",
+    "Loaded Pocket Chordsmith v69 demo",
   );
   await expect(page.locator("#progressionSlots .slot").first()).toContainText(
     /C|Am|F|G/,
@@ -1549,8 +1549,8 @@ test("large Core worker exports keep the composer responsive while rendering", a
 });
 
 test("generated single-file HTML exports WAV from file URLs using its embedded worker", async ({ page }) => {
-  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v68_core_bridge.html")).href);
-  await expect(page.getByRole("heading", { name: "Pocket Chordsmith v68" })).toBeVisible();
+  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v69_core_bridge.html")).href);
+  await expect(page.getByRole("heading", { name: "Pocket Chordsmith v69" })).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).first().click();
   await page.locator("#exportWavBtn").click();
   await expect(page.locator("#wavProgressText")).toContainText("WAV ready via Pocket Audio Core", { timeout: 30_000 });

@@ -6,8 +6,9 @@
   "latestPublishedTag": "pocket-daw-v0.6.50",
   "latestPublishedCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
   "unreleasedSourceNotes": [
-    "0.6.51 is a source-only reliability candidate: Stop/cache residency reconciliation, bounded stopped-edit stem reuse, superseded build cancellation, unchanged-revision signature reuse, scoped sample-library filtering and linear meter/stable readout updates. See docs/POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md at the repository root for executed source checks and remaining native acceptance.",
-    "No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit."
+    "0.6.51 is the unreleased family candidate: bounded cache/residency and hydration recovery, Campfire Acoustic, finite native passage audition, reversible Finish comparison, calibrated meters/final WAV checks, arranged native Godot exports, and menu/focus/overflow corrections. See the repository-root implementation ledger for scoped source/runtime evidence.",
+    "Installer preparation, exact installed PCM/MIDI/export/device checks, retained listening evidence and parent review are separate gates. Candidate receipts and attestations identify tested bytes; this source status does not claim a new installed or public pass.",
+    "The latest public and recorded installed-smoke version remains 0.6.50 at its exact tested commit. The unchanged itch bootstrapper is not a new full-installer upload target."
   ],
   "lastInstalledSmoke": {
     "version": "0.6.50",

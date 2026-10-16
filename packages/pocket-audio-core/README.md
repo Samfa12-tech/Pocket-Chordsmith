@@ -1,5 +1,10 @@
 # Pocket Audio Core
 
+Source candidate `0.3.0` adds the original Campfire Acoustic prepared-note family
+recipe and native-export analysis support. This package remains private and
+workspace/repository-only; it is not an npm release. Existing source IDs and
+PCS1/schema16/17 import compatibility remain in use.
+
 `decodePcmWavBytes` accepts existing PCM16/24 and IEEE float32 WAVs, including
 native DAW float exports. Float values retain their precision and non-finite
 diagnostics for offline analysis; this does not change the PCM16/24 encoders.
@@ -24,10 +29,10 @@ not a new runtime dependency. `npm run calibrate:meters -- --ffmpeg <binary>
 for exact methods, tolerances, failed controls and scope. Measurements remain
 labelled estimates; this is not EBU/ITU certification or a blanket mastering claim.
 
-- Core version: `0.2.0`
+- Core source version: `0.3.0`
 - Supported source prefix: `PCS1:`
 - Source schema targets: Pocket Chordsmith schemas `16` and `17`, with reversible legacy projection and explicit loss reporting
-- Integration status: Pocket Chordsmith v68, Pocket DJ v1g, Pocket DAW, and the Godot addon preserve canonical profile and rich-event intent; unsupported preview behavior remains visible through capability reports
+- Integration status: source candidates Pocket Chordsmithv69, Pocket DJv1h, Pocket DAW0.6.51 and Godot1.3.0 preserve canonical profile and rich-event intent; unsupported preview behavior remains visible through capability reports
 - Render status: deterministic profile-aware PCM/WAV and stem reference output, including parameter-sensitive Metal, Funk, Chip, Western, Lofi, and Standard behavior; this is not a claim of mastered cross-backend tone parity
 - Live playback status: profile-aware browser scheduling and procedural voices with explicit backend limitations
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
