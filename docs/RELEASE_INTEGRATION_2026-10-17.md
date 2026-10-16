@@ -2,7 +2,7 @@
 
 This branch starts from main `4f156e2c9857b40f7c79b3d6761d77c6683545d2`.
 It is an independent review candidate, not a merged source or public DAW release.
-DAW source is now 0.6.56; no installer or installed acceptance exists for it.
+DAW source is now 0.6.57; no installer or installed acceptance exists for it. The accepted0.6.56 transport/hint work remains, with a separate Library readiness-focus correction after its preparations were held before packaging.
 The0.6.55 preparation was stopped after independent review found an ordinary
 Play-after-Stop race and unbounded hint history. See
 [the corrected ownership and metadata policy](../apps/pocket-daw/docs/ORDINARY_TRANSPORT_STOP_OWNERSHIP_2026-10-17.md).

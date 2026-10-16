@@ -62,8 +62,9 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
       transformCallback(callback) { const id = ++next; window[`_${id}`] = callback; return id; }, unregisterCallback(id) { delete window[`_${id}`]; },
       async invoke(command, args = {}) {
         window.__finishCalls.push([command, args]);
+        if (command === "sample_library_load_state") return window.__librarySeed || null;
         if (holdStartupUpdate && command === "plugin:updater|check") return new Promise(resolve => { window.__resolveStartupCheck = available => resolve(available ? { rid: 9001, currentVersion: "0.6.51", version: "99.99.99", body: "Control fixture only" } : null); });
-        if (holdDiscovery && ["sample_library_starter_sounds", "vst3_beta_status"].includes(command)) return new Promise(resolve => window.__discoveryReplies.push(() => resolve(null)));
+        if (holdDiscovery && ["sample_library_starter_sounds", "vst3_beta_status"].includes(command)) return new Promise(resolve => window.__discoveryReplies.push(Object.assign(() => resolve(null), { command })));
         if (command === "open_project_file" && savedProject) { window.__coldOpenCount++; return { contents: savedProject, path: "C:\\fixture\\cold-saved.pocketdaw", label: "cold-saved.pocketdaw" }; }
         if (command === "read_audio_media_file" && savedProject) {
           window.__coldHydrationReads++;
@@ -200,6 +201,62 @@ for (const surface of ["Finish", "QC input"]) for (const available of [false, tr
     else { await page.evaluate(() => window.__releaseDelivery()); await expect(page.locator('[data-delivery-qc-host="dock"]')).toContainText("Check complete"); }
     if (available) {
       await expect(page.locator('[data-transport-status]')).toContainText("99.99.99 is available");
+      await page.getByRole("button", { name: "Help", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Check for Updates", exact: true }).click();
+      await expect(page.locator(".updater-panel")).toContainText("99.99.99");
+      await expect(page.locator('[data-action="updater-download-install"]')).toBeEnabled();
+    }
+    expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
+  });
+}
+
+for (const surface of ["selection", "search composition", "category", "folder", "placement"]) for (const phase of ["updater begin", "updater completion", "startup discovery"]) {
+  test(`passive ${phase} preserves the live Library ${surface} control`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => { window.__librarySeed = {
+      version: 1, folders: [], favoriteIds: [], recentIds: [], settings: { previewVolume: 0.8, lastCategory: "all", lastFolderId: null },
+      entries: ["Kick", "Guitar"].map(name => ({ id: name.toLowerCase(), name, path: `C:/fixtures/${name}.wav`, folderPath: "C:/fixtures", extension: "wav", sizeBytes: 100, modifiedUnixMs: null, category: name === "Kick" ? "drums" : "guitar", source: "file", sourceRoot: null, addedAt: "2026-10-15", lastSeenAt: "2026-10-15" }))
+    }; });
+    await fixture(page, false, { holdDiscovery: true, holdStartupUpdate: true });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => window.__discoveryReplies.length === 2 && !!window.__fireStartupUpdate);
+    // Let the native library seed become visible; keep VST3 discovery pending.
+    await page.evaluate(() => { const index = window.__discoveryReplies.findIndex(reply => reply.command === "sample_library_starter_sounds"); window.__discoveryReplies.splice(index, 1)[0](); });
+    await page.waitForFunction(() => window.__finishCalls.some(([command]) => command === "sample_library_save_state"));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    if (phase === "updater completion") {
+      await page.evaluate(() => window.__fireStartupUpdate());
+      await page.waitForFunction(() => !!window.__resolveStartupCheck);
+    }
+    await page.locator('[data-studio-rail-target="library"]').click();
+    await page.getByRole("tab", { name: "Samples", exact: true }).click();
+    await testInfo.attach("library-boundary-fixture", { body: JSON.stringify(await page.evaluate(() => ({ seed: window.__librarySeed, calls: window.__finishCalls.map(([command]) => command), selectionIds: Array.from(document.querySelectorAll("[data-sample-library-select]")).map(node => node.dataset.sampleLibrarySelect) }))), contentType: "application/json" });
+    const selector = surface === "selection" ? '[data-sample-library-select="kick"]'
+      : surface === "search composition" ? "[data-sample-library-search]"
+      : surface === "placement" ? "[data-sample-library-target-bar]" : `[data-sample-library-${surface}]`;
+    if (surface === "selection") await page.locator(selector).check();
+    else await page.locator(selector).focus();
+    await page.evaluate(({ selector, surface }) => {
+      const input = document.querySelector(selector);
+      if (surface === "search composition") { input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "Guit" })); input.value = "Guit"; input.setSelectionRange(1, 3); }
+      if (surface === "placement") input.value = "2.25";
+      window.__libraryReadinessControl = input;
+      window.__libraryReadinessBefore = { value: input.value, checked: input.checked, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd, renders: document.querySelector("#app").dataset.renderCount };
+    }, { selector, surface });
+    await page.evaluate(async phase => {
+      if (phase === "updater begin") window.__fireStartupUpdate();
+      else if (phase === "updater completion") window.__resolveStartupCheck(true);
+      else window.__discoveryReplies.splice(0).forEach(resolve => resolve());
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }, phase);
+    const observed = await page.evaluate(() => {
+      const control = window.__libraryReadinessControl, before = window.__libraryReadinessBefore;
+      return { connected: control.isConnected, focused: document.activeElement === control, value: control.value === before.value, checked: control.checked === before.checked, caret: control.selectionStart === before.selectionStart && control.selectionEnd === before.selectionEnd, rendersBefore: before.renders, rendersAfter: document.querySelector("#app").dataset.renderCount };
+    });
+    await testInfo.attach("library-readiness-control", { body: JSON.stringify(observed, null, 2), contentType: "application/json" });
+    expect(observed.connected && observed.focused && observed.value && observed.checked && observed.caret && observed.rendersBefore === observed.rendersAfter).toBe(true);
+    await expect(page.locator(".updater-panel")).toHaveCount(0);
+    if (surface === "selection" && phase === "updater completion") {
       await page.getByRole("button", { name: "Help", exact: true }).click();
       await page.getByRole("menuitem", { name: "Check for Updates", exact: true }).click();
       await expect(page.locator(".updater-panel")).toContainText("99.99.99");

@@ -693,6 +693,10 @@ export class App {
   }
 
   private shouldDeferReadinessRender(): boolean {
+    // Preserve live Library controls, including unfinished placement and IME
+    // text. A deliberate surface change renders the latest readiness state.
+    if (this.state.showAddTrack
+      && this.root.querySelector(".sample-library-workbench")?.contains(document.activeElement)) return true;
     return !this.state.showAddTrack && !this.state.showUpdaterPanel
       && (this.state.lowerDockTab === "export-details" || this.state.showFilePanel);
   }

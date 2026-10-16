@@ -2,7 +2,7 @@
 
 For the main-based 17 October integration, use
 [the current source scope and explicit release blockers](RELEASE_INTEGRATION_2026-10-17.md).
-Chordsmith v70/DJ v1i are published; DAW 0.6.56 is source only; the addon remains
+Chordsmith v70/DJ v1i are published; DAW 0.6.57 is source only; the addon remains
 main/1.2.0 in this integration. Later combined-branch Godot observations below
 remain retained on their held branch and are not promoted by this integration.
 

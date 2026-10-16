@@ -1,11 +1,13 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.56",
+  "sourceVersion": "0.6.57",
   "projectSchemaVersion": 3,
   "latestPublishedVersion": "0.6.50",
   "latestPublishedTag": "pocket-daw-v0.6.50",
   "latestPublishedCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
   "unreleasedSourceNotes": [
+    "0.6.57 is a separate source-only Library focus correction. A delayed background startup readiness refresh replaced live sample controls after selection, including unfinished search/IME and placement inputs. Readiness state still updates, but a focused Library workbench keeps its live DOM until an intentional surface change. Native clock, DSP, capture, project history and user update actions are unchanged. No0.6.57 installer or installed acceptance exists.",
+    "Exact0.6.56 source38f70df received scoped transport/hint acceptance and terminal green CI/CodeQL. Its first preparation failed before packaging on a cold Finish deadline and Library focus loss. A controlled retry was deliberately stopped before packaging after the delayed Library focus loss reproduced in a real frontend. Neither attempt created an installer or receipt. All failures, diagnostic runs, interrupted output and frozen0.6.54/private0.6.53 evidence remain retained. No fresh microphone action occurred.",
     "0.6.56 is a separate source-only correction to the main-based integration. Ordinary Play and Restart share preparation/request and engine-generation ownership so Stop, Pause, Seek or a newer start cannot be undone by a delayed completion. Existing MIDI/Finish ownership is composed, not replaced. Residency hints retain only the latest revision per asset, with at most256 entries and512 characters per key; forgotten hints preserve full-byte fallback. No0.6.56 installer or installed acceptance exists.",
     "Independent review reproduced ordinary Play-after-Stop on both0.6.54 and0.6.55 and unbounded hint history on0.6.55. The one0.6.55 preparation was stopped, with no receipt or installer created; partial outputs and all evidence remain retained. The exact3d1a810 full production suite separately passed62/62 with both unchanged150ms worker limits, but that does not waive the source correctness blockers. Frozen0.6.54 remains installed and unchanged; no microphone action occurred.",
     "The frozen 0.6.54 fa38172 installer and receipt remain immutable and unpublished. Sam confirmed the Undo/Redo export viewport fix; installed media, VST3, game-pack decoding and separate MIDI-only checks passed. Whole acceptance remains blocked on eligible capture evidence and remaining native manual scope. Bounded raw HTTP diagnostics reproduced 4.42/3.72-second warm Play delays; source-native instrumentation and the cache-retention correction require independent review and a new exact installer.",
