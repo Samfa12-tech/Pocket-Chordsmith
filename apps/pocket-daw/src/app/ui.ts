@@ -2889,16 +2889,16 @@ function renderFinishComparison(state: AppState): string {
   return `<section class="finish-comparison" aria-labelledby="finishHeading">
     <h3 id="finishHeading">Finish &amp; Compare</h3>
     <label>Starting point <select data-finish-preset data-finish-focus="preset" ${finish.phase === "preparing" ? "disabled" : ""}>${FINISH_PRESETS.map(item => `<option value="${item.id}" ${item.id === finish.presetId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select></label>
-    <details><summary>What to listen for</summary><p>${escapeHtml(preset.cue)}</p><p>Try a vocal phrase, a loud transition or a live instrument with a quiet tail. A/B keeps the same position; matched monitor gain never changes your exported mix.</p></details>
+    <details data-finish-examples><summary data-finish-focus="examples">What to listen for</summary><p>${escapeHtml(preset.cue)}</p><p>These playable examples use your selected passage and the selected starting point. They prepare temporary audio, then play only when requested. They cannot be applied or saved over the project. A/B keeps the same position; matched monitor gain never changes your exported mix.</p><div class="finish-actions"><button data-action="finish-example-a" data-finish-focus="example-a" ${recording ? "disabled" : ""}>Hear original example</button><button data-action="finish-example-b" data-finish-focus="example-b" ${recording ? "disabled" : ""}>Hear proposed example</button></div></details>
     <p>${escapeHtml(finish.rangeLabel || "Uses the selected edit range or clips, with the visible Hear this bit lead-in and tail settings.")}</p>
     <div class="finish-actions">
       <button data-action="finish-prepare" data-finish-focus="prepare" ${recording || finish.phase === "preparing" ? "disabled" : ""}>Prepare comparison</button>
       <button data-action="finish-a" data-finish-focus="a" aria-pressed="${finish.side === "a" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>A · Original</button>
       <button data-action="finish-b" data-finish-focus="b" aria-pressed="${finish.side === "b" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>B · Proposed</button>
       <button data-action="finish-stop" data-finish-focus="stop" ${["playing", "preparing"].includes(finish.phase) ? "" : "disabled"}>Stop</button>
-      <button data-action="finish-apply" data-finish-focus="apply" ${finish.phase === "ready" && !recording ? "" : "disabled"}>Apply proposed</button>
+      <button data-action="finish-apply" data-finish-focus="apply" ${finish.phase === "ready" && !recording && !finish.example ? "" : "disabled"}>Apply proposed</button>
       <button data-action="finish-discard" data-finish-focus="discard" ${finish.phase !== "idle" ? "" : "disabled"}>Discard</button>
-      <button data-action="undo" data-finish-focus="undo" ${state.undoStack.past.length ? "" : "disabled"}>Undo last edit</button>
+      <button data-action="undo" data-finish-focus="undo" ${state.undoStack.past.length && !finish.example ? "" : "disabled"}>Undo last edit</button>
     </div>
     <p role="status" aria-live="polite">${escapeHtml(finish.message)}</p>
     ${finish.readings.length ? `<ul>${finish.readings.map(reading => `<li>${escapeHtml(reading)}</li>`).join("")}</ul>` : ""}

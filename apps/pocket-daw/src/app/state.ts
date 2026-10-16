@@ -46,6 +46,7 @@ export interface AppState {
   selectionAudition: { phase: "idle" | "preparing" | "playing"; message: string };
   finishComparison: {
     presetId: FinishPresetId;
+    example: boolean;
     phase: "idle" | "preparing" | "ready" | "playing";
     side: "a" | "b";
     message: string;
@@ -307,7 +308,7 @@ export function createInitialState(): AppState {
     auditionLeadInSeconds: 0.5,
     auditionTailSeconds: 1,
     selectionAudition: { phase: "idle", message: "" },
-    finishComparison: { presetId: "tidy", phase: "idle", side: "a", message: "Choose a passage and prepare a comparison. Nothing plays or changes until you choose it.", rangeLabel: "", readings: [], warnings: [] },
+    finishComparison: { presetId: "tidy", example: false, phase: "idle", side: "a", message: "Choose a passage and prepare a comparison. Nothing plays or changes until you choose it.", rangeLabel: "", readings: [], warnings: [] },
     playheadBar: 1,
     meterLevels: {},
     importText: "",

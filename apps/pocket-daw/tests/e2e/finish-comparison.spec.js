@@ -438,6 +438,43 @@ test("prepared measured comparison has no autoplay; A/B shares one start and App
   await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
 });
 
+test("playable examples request native comparison without allowing Apply or saving edits", async ({ page }) => {
+  await fixture(page); await openFinish(page);
+  await page.locator('.finish-comparison summary').click();
+  expect(await page.evaluate(() => window.__finishCalls.some(([name]) => name === "native_audio_start"))).toBe(false);
+  await page.locator('[data-action="finish-example-b"]').click();
+  await expect(page.locator('.finish-comparison [role=status]')).toContainText("Proposed playing", { timeout: 20000 });
+  await page.locator('[data-action="finish-stop"]').click();
+  await expect(page.locator('[data-action="finish-apply"]')).toBeDisabled();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+  await page.locator('[data-action="finish-example-a"]').click();
+  await expect(page.locator('.finish-comparison [role=status]')).toContainText("Original playing");
+  await page.locator('[data-action="finish-discard"]').click();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+});
+
+test("cancelled example cannot autoplay on a late preparation result", async ({ page }) => {
+  await fixture(page, true); await openFinish(page); await page.locator('.finish-comparison summary').click();
+  await page.locator('[data-action="finish-example-b"]').click();
+  await page.waitForFunction(() => !!window.__finishRelease);
+  await page.locator('[data-action="finish-stop"]').click(); await page.evaluate(() => window.__finishRelease());
+  await expect(page.locator('.finish-comparison [role=status]')).toContainText("cancelled");
+  expect(await page.evaluate(() => window.__finishCalls.some(([name]) => name === "native_audio_start"))).toBe(false);
+});
+
+test("selected-track proposal reaches both native render inputs and retains one Apply Undo", async ({ page }) => {
+  await fixture(page); await openFinish(page);
+  await page.locator('[data-finish-preset]').selectOption('track_quieter');
+  await page.locator('[data-action="finish-prepare"]').click();
+  await expect(page.locator('.finish-comparison [role=status]')).toContainText("Ready.", { timeout: 20000 });
+  const mix = await page.evaluate(() => window.__finishRenderInputs.slice(-2).map(input => input.tracks.find(track => track.id === 'drums').volume));
+  expect(mix[1] / mix[0]).toBeCloseTo(10 ** (-3 / 20), 10);
+  await page.locator('[data-action="finish-apply"]').click();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeEnabled();
+  await page.locator('[data-finish-focus="undo"]').click();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+});
+
 test("Stop cancels native preparation and a late file cannot become an applicable proposal", async ({ page }) => {
   await fixture(page, true); await openFinish(page);
   await page.locator('[data-action="finish-prepare"]').click();

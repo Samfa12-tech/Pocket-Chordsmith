@@ -1,19 +1,26 @@
 import type { PocketDawProject } from "./schema";
 import { cloneProject } from "./dawProject";
 import { addFxSlot, setFxSlotParameter } from "./fx";
+import { setTrackVolume } from "./mixer";
 
-export type FinishPresetId = "original" | "tidy" | "glue" | "bypass";
+export type FinishPresetId = "original" | "tidy" | "glue" | "bypass" | "track_quieter";
 const FINISH_PREFIX = "pocket-finish:";
 
 export const FINISH_PRESETS = [
+  { id: "track_quieter", name: "Selected track −3 dB", cue: "Listen for this track leaving room for the rest of the arrangement. The full mix is monitor-matched; a solo track can therefore sound unchanged. Select a non-master track first.", effects: [] },
   { id: "original", name: "Original mix", cue: "Your current mix, with no proposed changes.", effects: [] },
   { id: "tidy", name: "Low-end tidy", cue: "Listen for less rumble below 30 Hz. Other master effects stay in place.", effects: [{ type: "high-pass", parameters: { frequency: 30, q: 0.7 } }] },
   { id: "glue", name: "Gentle glue", cue: "Listen for softer level jumps: 25 Hz cleanup and gentle 1.3:1 compression. No loudness boost or limiter is added.", effects: [{ type: "high-pass", parameters: { frequency: 25, q: 0.7 } }, { type: "compressor", parameters: { threshold: -18, ratio: 1.3, attack: 0.025, release: 0.18 } }] },
   { id: "bypass", name: "Bypass Finish effects", cue: "Remove only effects previously applied by Finish. Keep the rest of your mix.", effects: [] }
 ] as const;
 
-export function projectWithFinishPreset(project: PocketDawProject, id: FinishPresetId): PocketDawProject {
+export function projectWithFinishPreset(project: PocketDawProject, id: FinishPresetId, trackId?: string): PocketDawProject {
   if (id === "original") return project;
+  if (id === "track_quieter") {
+    const track = project.tracks.find(item => item.id === trackId);
+    if (!track || track.trackType === "master" || !(track.volume > 0)) throw new Error("Select an audible non-master track for the −3 dB proposal.");
+    return setTrackVolume(project, track.id, track.volume * 10 ** (-3 / 20));
+  }
   const preset = FINISH_PRESETS.find(item => item.id === id);
   if (!preset) throw new Error("Choose a supported Finish starting preset.");
   const master = project.tracks.find(track => track.trackType === "master");

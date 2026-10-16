@@ -4,10 +4,38 @@ import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { createUndoStack, pushUndo, undo } from "../src/daw/undo";
 import { finishMonitorGains, projectWithFinishPreset, type FinishAudioMeasurements } from "../src/daw/finishing";
+import { createInitialState, createUiCollapsedSections } from "../src/app/state";
+import { renderAppShell } from "../src/app/ui";
 
 const measurement = (lufs: number | null, peak = -3): FinishAudioMeasurements => ({ integratedLufs: lufs, truePeakDbtp: peak, nonFiniteSamples: 0, durationSeconds: 3, sampleRate: 48000, channelCount: 2 });
 
 describe("Finish proposals and monitor matching", () => {
+  it("previews selected-track gain without changing source, FX, automation or media and commits one Undo", () => {
+    const source = createDemoProject();
+    const track = source.tracks.find(item => item.trackType !== "master" && item.volume > 0)!;
+    const before = structuredClone(source);
+    const proposed = projectWithFinishPreset(source, "track_quieter", track.id);
+    expect(source).toEqual(before);
+    expect(proposed.tracks.find(item => item.id === track.id)!.volume).toBeCloseTo(track.volume * 10 ** (-3 / 20), 12);
+    expect(proposed.fx).toEqual(source.fx);
+    expect(proposed.automation).toEqual(source.automation);
+    expect(proposed.timeline).toEqual(source.timeline);
+    const history = pushUndo(createUndoStack(source), proposed);
+    expect(history.past).toHaveLength(1);
+    expect(undo(history).present).toEqual(source);
+    expect(() => projectWithFinishPreset(source, "track_quieter", "missing")).toThrow("non-master");
+    expect(() => projectWithFinishPreset(source, "track_quieter", source.tracks.find(item => item.trackType === "master")!.id)).toThrow("non-master");
+  });
+  it("disables example Apply and all preview starts while recording", () => {
+    const state = createInitialState(); state.lowerDockTab = "export-details"; state.timelineHeightPx = 430; state.collapsedUiSections = createUiCollapsedSections();
+    state.finishComparison.phase = "ready"; state.finishComparison.example = true;
+    expect(renderAppShell(state)).toMatch(/data-action="finish-apply"[^>]*disabled/);
+    state.recording.status = "recording";
+    const html = renderAppShell(state);
+    expect(html).toMatch(/data-action="finish-example-a"[^>]*disabled/);
+    expect(html).toMatch(/data-action="finish-example-b"[^>]*disabled/);
+    expect(html).toMatch(/data-action="finish-prepare"[^>]*disabled/);
+  });
   it("preserves source and user FX, replaces only managed slots, and bypasses reversibly", () => {
     let source = createDemoProject();
     const master = source.tracks.find(track => track.trackType === "master")!;

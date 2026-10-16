@@ -17,10 +17,10 @@ export interface PreparedFinishComparison {
   dispose(): Promise<void>;
 }
 
-export async function prepareFinishComparison(source: PocketDawProject, preset: FinishPresetId, range: FinishAnalysisRange, signal: AbortSignal, progress: (message: string) => void, cleanupError: (error: unknown) => void): Promise<PreparedFinishComparison> {
+export async function prepareFinishComparison(source: PocketDawProject, preset: FinishPresetId, range: FinishAnalysisRange, signal: AbortSignal, progress: (message: string) => void, cleanupError: (error: unknown) => void, trackId?: string): Promise<PreparedFinishComparison> {
   if (preset === "original") throw new Error("Choose a proposed starting point; A always keeps your original mix.");
   if (range.endSeconds - range.startSeconds > 120 || range.endSeconds > 600 || range.endSeconds * source.project.sampleRate * 8 + 44 > 128 * 1024 * 1024) throw new Error("Choose a shorter or earlier passage: preview keeps up to 600 seconds of effect history and 128 MiB per version, with a passage up to 120 seconds.");
-  const proposed = projectWithFinishPreset(source, preset);
+  const proposed = projectWithFinishPreset(source, preset, trackId);
   const native = new NativeFinishPreview();
   const check = () => { if (signal.aborted) throw new DOMException("Finish preparation cancelled.", "AbortError"); };
   const cancel = () => { void native.dispose().catch(cleanupError); };

@@ -507,7 +507,7 @@ export class App {
   private deliveryQcProject: PocketDawProject | null = null;
   private wavExportInProgress = false;
   private finishActionToken = 0;
-  private finishContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number; controller: AbortController; prepared: PreparedFinishComparison | null } | null = null;
+  private finishContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number; controller: AbortController; prepared: PreparedFinishComparison | null; example: boolean; trackId?: string } | null = null;
   private selectionAuditionContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number } | null = null;
   private sampleLibraryDragUnlisten: (() => void) | null = null;
   private vst3EditorPollTimers = new Map<string, number>();
@@ -1866,6 +1866,7 @@ export class App {
       : focused?.hasAttribute("data-audition-control") ? `[data-audition-control="${CSS.escape(focused.dataset.auditionControl || "")}"]:not(:disabled)` : null;
     const menuFocus = focused?.classList.contains("menu-root") ? focused.id : null;
     const finishFocus = focused?.dataset.finishFocus;
+    const finishExamplesOpen = this.root.querySelector<HTMLDetailsElement>("[data-finish-examples]")?.open === true;
     const guitarFocus = focused?.hasAttribute("data-guitar-performance")
       ? `[data-guitar-performance="${CSS.escape(focused.dataset.guitarPerformance || "")}"]`
       : focused?.hasAttribute("data-guitar-setting") ? `[data-guitar-setting="${CSS.escape(focused.dataset.guitarSetting || "")}"]` : null;
@@ -1873,6 +1874,8 @@ export class App {
     if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
     this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(this.engine.getDiagnostics());
     this.root.innerHTML = renderAppShell(this.state);
+    const finishExamples = this.root.querySelector<HTMLDetailsElement>("[data-finish-examples]");
+    if (finishExamples) finishExamples.open = finishExamplesOpen;
     this.root.dataset.renderCount = String(this.renderCount);
     this.root.dataset.renderCountDuringPlayback = String(this.renderCountDuringPlayback);
     this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
@@ -7487,7 +7490,7 @@ export class App {
 
   private finishComparisonIsCurrent(): boolean {
     const context = this.finishContext;
-    return !!context && !context.controller.signal.aborted && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision();
+    return !!context && !context.controller.signal.aborted && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision() && (!context.trackId || context.trackId === this.state.selectedTrackId);
   }
 
   private cancelFinishComparison(message: string) {
@@ -7495,7 +7498,7 @@ export class App {
     const context = this.finishContext;
     this.finishContext = null;
     const ownsTransport = context?.transportRevision === this.engine.getTransportRevision();
-    this.state.finishComparison = { ...this.state.finishComparison, phase: "idle", message, rangeLabel: "", readings: [], warnings: [] };
+    this.state.finishComparison = { ...this.state.finishComparison, example: false, phase: "idle", message, rangeLabel: "", readings: [], warnings: [] };
     context?.controller.abort();
     if (context?.prepared) void context.prepared.dispose().catch(error => { this.state.status = `Finish preview cleanup needs attention: ${String(error)}`; });
     if (context && ownsTransport) this.engine.stop();
@@ -7521,17 +7524,29 @@ export class App {
       this.render({ preserveScroll: true }); return;
     }
     let context = this.finishContext;
+    if (action === "finish-example-a" || action === "finish-example-b") {
+      const side = action.endsWith("-a") ? "a" : "b";
+      if (!context?.example || !context.prepared || !this.finishComparisonIsCurrent()) {
+        const preparation = this.handleFinishAction("finish-prepare-example");
+        const owner = this.finishContext;
+        await preparation;
+        if (!owner || this.finishContext !== owner || !owner.prepared || !this.finishComparisonIsCurrent()) return;
+      }
+      await this.handleFinishAction(`finish-${side}`);
+      return;
+    }
     try {
-      if (action === "finish-prepare") {
+      if (action === "finish-prepare" || action === "finish-prepare-example") {
         const plan = selectionAuditionPlan(currentProject(this.state), this.normalizedSelectedClipIds(), this.state.auditionLeadInSeconds, this.state.auditionTailSeconds);
         this.cancelFinishComparison("");
         actionToken = ++this.finishActionToken;
         this.cancelSelectionAudition("");
         this.engine.stop(); this.stopLiveMetronome();
-        context = { project: currentProject(this.state), key: this.selectionAuditionKey(), transportRevision: this.engine.getTransportRevision(), endSeconds: plan.endSeconds, controller: new AbortController(), prepared: null };
+        context = { project: currentProject(this.state), key: this.selectionAuditionKey(), transportRevision: this.engine.getTransportRevision(), endSeconds: plan.endSeconds, controller: new AbortController(), prepared: null, example: action === "finish-prepare-example", trackId: ui.presetId === "track_quieter" ? this.state.selectedTrackId ?? undefined : undefined };
         this.finishContext = context;
         const owner = context;
         this.state.finishComparison.phase = "preparing";
+        this.state.finishComparison.example = owner.example;
         this.state.finishComparison.rangeLabel = `${plan.label}, bars ${plan.startBar}–${plan.endBar}; ${plan.leadInSeconds.toFixed(1)} s lead-in, ${plan.tailSeconds} s tail.`;
         this.state.finishComparison.message = "Preparing comparison. Stop cancels; nothing autoplays.";
         this.render({ preserveScroll: true });
@@ -7541,7 +7556,7 @@ export class App {
         const prepared = await prepareFinishComparison(owner.project, this.state.finishComparison.presetId, plan, owner.controller.signal, message => {
           if (this.finishContext !== owner || !this.finishComparisonIsCurrent()) return;
           this.state.finishComparison.message = message; this.render({ preserveScroll: true });
-        }, error => { this.state.status = `Finish preview cleanup needs attention: ${String(error)}`; });
+        }, error => { this.state.status = `Finish preview cleanup needs attention: ${String(error)}`; }, owner.trackId);
         if (this.finishContext !== owner || !this.finishComparisonIsCurrent()) { await prepared.dispose(); return; }
         owner.prepared = prepared;
         this.state.finishComparison.phase = "ready";
@@ -7554,6 +7569,7 @@ export class App {
       } else {
         if (!context?.prepared || !this.finishComparisonIsCurrent()) throw new Error("Prepare a fresh comparison for the current project and selection.");
         if (action === "finish-apply") {
+          if (context.example) throw new Error("Listening examples cannot be applied. Prepare a proposal to make an edit.");
           const proposed = context.prepared.proposed;
           this.cancelFinishComparison("Proposed Finish applied. Undo last edit restores the previous mix.");
           this.applyProjectState(commitProject(this.state, proposed, "Applied Finish proposal. Undo restores the previous mix."), { preserveScroll: true, audio: "mixer-graph", reason: "finish-apply" });
