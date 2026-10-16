@@ -2,7 +2,7 @@
 
 Use this file as stable project context for Codex before making any Pocket Chordsmith update.
 
-Current baseline: `pocket_chordsmith_v69_core_bridge.html`
+Current baseline: `pocket_chordsmith_v70_core_bridge.html`
 Previous direct-Godot baseline retained only as an unsupported historical reference: `../archive/unsupported-runnable-builds/chordsmith-web/pocket_chordsmith_v67_direct_godot_push.html`
 Canonical monorepo path: `apps/chordsmith-web/`
 Project type: single-file, mobile-first browser music sketchpad  

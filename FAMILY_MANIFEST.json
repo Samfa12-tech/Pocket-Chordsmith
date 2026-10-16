@@ -15,7 +15,7 @@
       "kind": "hosted-web-app",
       "versions": {
         "package": "1.0.0",
-        "build": "v69",
+        "build": "v70",
         "schema": "17",
         "legacySchema": "16",
         "core": "0.3.0"
@@ -37,7 +37,7 @@
       "kind": "hosted-web-app",
       "versions": {
         "package": "1.0.0",
-        "build": "v1h",
+        "build": "v1i",
         "sessionSchema": "1",
         "sourceSchema": "17",
         "legacySourceSchema": "16",

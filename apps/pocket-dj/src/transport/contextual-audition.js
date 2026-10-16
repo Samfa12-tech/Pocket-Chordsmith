@@ -29,6 +29,7 @@ function setDjAuditionStatus(message){
   document.getElementById("djAuditionStatus").textContent=message;
 }
 function renderDjAudition(){
+  renderDjComparison();
   if(!session) return;
   const select=document.getElementById("djAuditionBar");
   const count=getSection(session.performance.currentSection).bars;
@@ -45,19 +46,20 @@ function renderDjAudition(){
 function djAuditionIsCurrent(context){
   return djAudition===context && session===context.session && JSON.stringify(exportPocketDjSession(session))===context.source;
 }
-async function hearDjBit(){
+async function hearDjBit(compareBass=null){
   if(!session || djAudition) return;
   if(session.performance.buildActive || state.dropQueued || state.dropLanding || state.buildSavedFx || macroFrameId || session.performance.funkMacros?.phraseFill){
     setDjAuditionStatus("Finish or reset the active build/drop/fill first; use Play to hear that performance.");
     return;
   }
   stopPlayback({preservePerformance:true});
-  const context={...djAuditionPlan(),session,source:JSON.stringify(exportPocketDjSession(session)),endAudioTime:Infinity};
+  const context={...djAuditionPlan(),session,source:JSON.stringify(exportPocketDjSession(session)),endAudioTime:Infinity,compareBass:typeof compareBass==="number"?compareBass:null};
   djAudition=context; renderDjAudition(); setDjAuditionStatus("Preparing. Stop cancels.");
   await startPlayback(context);
   if(djAudition===context && !state.playing){djAudition=null;renderDjAudition();setDjAuditionStatus("Passage changed. Hear this bit again.");}
 }
 function bindDjAudition(){
+  bindDjComparison();
   document.getElementById("hearDjBitBtn").addEventListener("click",hearDjBit);
   document.getElementById("stopDjBitBtn").addEventListener("click",stopPlayback);
   for(const id of ["djAuditionBar","djAuditionLead","djAuditionTail"]){
@@ -66,7 +68,7 @@ function bindDjAudition(){
   // Cancel before existing controls change the performance; keep those controls' actions intact.
   const cancelForControl=event=>{
     if(!djAudition || !event.target.closest?.("button,input,select,textarea,a")) return;
-    if(event.target.closest("#djAuditionControls,#playBtn,#stopBtn,#restartBtn")) return;
+    if(event.target.closest("#djAuditionControls,#djComparison,#playBtn,#stopBtn,#restartBtn")) return;
     stopPlayback();
   };
   for(const name of ["pointerdown","click","input","change"]) document.addEventListener(name,cancelForControl,true);

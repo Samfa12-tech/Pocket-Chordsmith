@@ -615,7 +615,7 @@ function playMetronome(t, accent=false){
 function chordNotes(ch){
   const base = 48 + ch.root + (state.chordOctave * 12);
   let notes = ch.intervals.map((it, idx) => base + it + (idx===0?0:12));
-  if(state.chordPlayMode === "strum_down" || state.chordPlayMode === "arp_down") notes = notes.reverse();
+  if(comparisonChordMode() === "strum_down" || comparisonChordMode() === "arp_down") notes = notes.reverse();
   return notes;
 }
 function chordInstrumentConfig(name){
@@ -718,17 +718,17 @@ function playChord(ch, t, dur){
   const notes = chordNotes(ch);
   const cfg = chordInstrumentConfig(state.chordInstrument);
   const chordDur = Math.max(0.08, Math.min(dur * cfg.durMul * funkStabDurationScale(), cfg.maxLiveDur || 1.1));
-  if(state.chordPlayMode === "block"){
+  if(comparisonChordMode() === "block"){
     notes.forEach((m, idx) => {
       const noteStart = t + idx * 0.01 * cfg.spreadMul;
       playChordTone(midiToFreq(m), noteStart, chordDur, idx===0 ? cfg.rootWave : cfg.wave, cfg.peak, cfg.filter, cfg.freq, cfg);
-      if(cfg.shimmer && idx > 0 && state.chordPlayMode === "block") playChordTone(midiToFreq(m + 12), noteStart + 0.014, Math.min(0.12, chordDur * 0.35), "sine", cfg.peak * 0.08, "lowpass", 5200, {attack:0.002, decay:0.12, sustain:0.06, release:0.35, layers:[{wave:"sine", level:1}]});
+      if(cfg.shimmer && idx > 0 && comparisonChordMode() === "block") playChordTone(midiToFreq(m + 12), noteStart + 0.014, Math.min(0.12, chordDur * 0.35), "sine", cfg.peak * 0.08, "lowpass", 5200, {attack:0.002, decay:0.12, sustain:0.06, release:0.35, layers:[{wave:"sine", level:1}]});
     });
   } else {
-    const gap = (state.chordPlayMode.startsWith("strum") ? 0.045 : 0.12) * cfg.spreadMul;
+    const gap = (comparisonChordMode().startsWith("strum") ? 0.045 : 0.12) * cfg.spreadMul;
     notes.forEach((m, idx) => {
       const noteStart = t + idx * gap;
-      const noteDur = state.chordPlayMode.startsWith("strum") ? chordDur : Math.min(0.25, chordDur * 0.45);
+      const noteDur = comparisonChordMode().startsWith("strum") ? chordDur : Math.min(0.25, chordDur * 0.45);
       playChordTone(midiToFreq(m), noteStart, noteDur, idx===0 ? cfg.rootWave : cfg.wave, cfg.peak * 0.92, cfg.filter, cfg.freq, cfg);
     });
   }

@@ -248,6 +248,12 @@ async function startPlayback(mode="section"){
     scheduler();
   }, SCHEDULER_INTERVAL_MS);
   schedulerTimers.add(schedulerTimer);
+  if(audition){
+    // Anchor after UI work and schedule the first lookahead before yielding.
+    nextNoteTime = audioCtx.currentTime + 0.04;
+    audition.endAudioTime = nextNoteTime + schedulerPlanTiming.total + audition.tail;
+    scheduler();
+  }
 }
 async function togglePlay(mode="section"){
   if(transportBusy) return;

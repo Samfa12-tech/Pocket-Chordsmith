@@ -31,7 +31,7 @@ authority when they differ from examples or older prompts.
   not the default authoring target.
 
 Before creating JSON, inspect
-`apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html` for
+`apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html` for
 `PROJECT_SCHEMA_VERSION`, `SECTION_IDS`, limits, `sanitizeProjectData()`,
 `exportProject()`, `projectToSchema16()` and the current capability/loss-report
 logic. The local composer skill at

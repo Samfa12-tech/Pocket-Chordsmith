@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "output": "pocket_dj_v1h_core_bridge.html",
+  "output": "pocket_dj_v1i_core_bridge.html",
   "fragments": [
     "src/state/01-foundation.js",
     "src/handoff/02-transfer.js",
@@ -9,6 +9,7 @@
     "src/audio/campfire-playback.js",
     "src/transport/05-scheduler.js",
     "src/transport/contextual-audition.js",
+    "src/transport/passage-comparison.js",
     "src/ui/06-interface.js",
     "src/accessibility/07-help-and-init.js"
   ]

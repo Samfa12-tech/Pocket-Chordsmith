@@ -45,7 +45,7 @@ interface BrowserTrace {
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
-const chordsmithHtml = pathToFileURL(resolve(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html")).href;
+const chordsmithHtml = pathToFileURL(resolve(repoRoot, "apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html")).href;
 const fixtureIndex = JSON.parse(
   readFileSync(new URL("../../../packages/pocket-audio-core/tests/fixtures/index.json", import.meta.url), "utf8")
 ) as CoreFixtureIndexEntry[];

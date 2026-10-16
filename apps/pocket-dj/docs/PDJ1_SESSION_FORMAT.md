@@ -2,7 +2,7 @@
 
 `PDJ1:` is the planned Pocket DJ session/share-code envelope. It captures performance state for a live remix deck without rewriting the source Pocket Chordsmith composition.
 
-Pocket DJ currently accepts `PDJ1:` input, raw `PocketDJ` session JSON, `PCS1:` share codes and raw Pocket Chordsmith JSON in `pocket_dj_v1h_core_bridge.html`. The current local save uses the same session object under `pocket_dj_v1_last_session`; this note defines the boundary that future public `PDJ1:` export/import should keep.
+Pocket DJ currently accepts `PDJ1:` input, raw `PocketDJ` session JSON, `PCS1:` share codes and raw Pocket Chordsmith JSON in `pocket_dj_v1i_core_bridge.html`. The current local save uses the same session object under `pocket_dj_v1_last_session`; this note defines the boundary that future public `PDJ1:` export/import should keep.
 
 ## Boundary
 

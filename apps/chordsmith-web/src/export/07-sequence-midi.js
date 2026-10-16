@@ -912,7 +912,7 @@ function loadDemo(){
   applyWesternPresetToProject("western_frontier_ride", {fullLoop:true, pushUndo:false, render:false, status:false, preview:false});
   renderAll();
   primePocketAudioCoreFromCurrentProject("demo").catch(() => {});
-  setStatus("Loaded Pocket Chordsmith v69 demo");
+  setStatus("Loaded Pocket Chordsmith v70 demo");
 }
 function bytesVLQ(value){
   let buffer = value & 0x7F;
@@ -1140,7 +1140,7 @@ function buildChordsmithParityTrace(options={}){
     const events = buildSequenceEvents().map(normalizeChordsmithTraceEvent);
     return {
       app: "PocketChordsmith",
-      version: "v69",
+      version: "v70",
       projectVersion: PROJECT_SCHEMA_VERSION,
       scope: getSelectedExportScope(),
       eventCount: events.length,

@@ -613,7 +613,7 @@ function effectiveStemGain(stem){
   const perf = session.performance;
   const muted = !!perf.stemMutes[stem] || (stem === "bass" && !!perf.funkMacros?.bassMute);
   const scale = clamp(asNum(state.performanceStemScales?.[stem], 1), 0, 1.4);
-  let gain = muted ? 0 : clamp(asNum(perf.stemVolumes[stem],.8),0,1) * scale;
+  let gain = muted ? 0 : clamp(asNum(stem === "bass" ? comparisonBassVolume(perf.stemVolumes[stem]) : perf.stemVolumes[stem],.8),0,1) * scale;
   if(stem === "guitar" && !session.deck.guitarActive) gain = 0;
   return gain;
 }

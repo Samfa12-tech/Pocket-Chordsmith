@@ -64,7 +64,7 @@ test("Campfire missing prepared Core fails explicitly without amplifier fallback
 });
 
 test("standalone Campfire strum and pick survives saved DJ sessions without changing the source grid", async ({ page }) => {
-  await page.goto(pathToFileURL(resolve(import.meta.dirname,"..","pocket_dj_v1h_core_bridge.html")).href);
+  await page.goto(pathToFileURL(resolve(import.meta.dirname,"..","pocket_dj_v1i_core_bridge.html")).href);
   await requireLiveBrowserAudio(page);
   const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPerformanceA:"strum_pick",sectionBars:{A:4},songSequence:["A"],progressionA:[0,0,3,3],guitarPatternA:["scratch"],future:{keep:true}};
   await page.locator("#importText").fill(JSON.stringify(source));

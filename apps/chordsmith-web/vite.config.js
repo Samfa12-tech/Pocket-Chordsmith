@@ -8,9 +8,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
-        pocket_chordsmith_v69_core_bridge: resolve(
+        pocket_chordsmith_v70_core_bridge: resolve(
           __dirname,
-          "pocket_chordsmith_v69_core_bridge.html",
+          "pocket_chordsmith_v70_core_bridge.html",
         ),
       },
     },

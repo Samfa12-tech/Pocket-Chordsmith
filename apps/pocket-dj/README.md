@@ -24,7 +24,7 @@ Canonical source path: `apps/pocket-dj/`.
 The v1h source candidate uses Core0.3.0. The verified public itch channel remains
 v1g until the separate reviewed publication step.
 
-- `index.html` redirects to `pocket_dj_v1h_core_bridge.html`.
+- `index.html` redirects to `pocket_dj_v1i_core_bridge.html`.
 - `../archive/unsupported-runnable-builds/pocket-dj/pocket_dj_v1f_push_handoffs.html` is retained only as an unsupported historical snapshot and is excluded from current packages.
 - Planning docs live in `docs/`.
 
@@ -54,6 +54,6 @@ npm run package:itch
 `npm run package:itch` builds `packages/pocket-audio-core`, stages a clean Pocket
 DJ web package under `dist/itch-package/`, and writes
 `local-artifacts/staging/pocket-dj/pocket-dj-web.zip`. The zip includes `index.html`,
-`pocket_dj_v1h_core_bridge.html`, and packaged `pocket-audio-core/src` plus
+`pocket_dj_v1i_core_bridge.html`, and packaged `pocket-audio-core/src` plus
 `pocket-audio-core/dist` fallback files so hosted builds can load Pocket Audio
 Core from `./pocket-audio-core/...`.

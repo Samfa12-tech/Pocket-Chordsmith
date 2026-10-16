@@ -13,7 +13,7 @@ const outputZip = resolve(outputDir, "pocket-dj-web.zip");
 const bestzipCli = resolve(appRoot, "node_modules", "bestzip", "bin", "cli.js");
 const requiredEntries = [
   "index.html",
-  "pocket_dj_v1h_core_bridge.html",
+  "pocket_dj_v1i_core_bridge.html",
   "pocket-audio-core/dist/pocket-audio-core.esm.js",
   "pocket-audio-core/dist/pocket-audio-core.iife.js",
   "pocket-audio-core/dist/api-manifest.json",
@@ -122,8 +122,8 @@ copyRequiredFile(
   resolve(packageDir, "index.html"),
 );
 copyRequiredFile(
-  resolve(appRoot, "pocket_dj_v1h_core_bridge.html"),
-  resolve(packageDir, "pocket_dj_v1h_core_bridge.html"),
+  resolve(appRoot, "pocket_dj_v1i_core_bridge.html"),
+  resolve(packageDir, "pocket_dj_v1i_core_bridge.html"),
 );
 cpSync(resolve(coreRoot, "dist"), resolve(bundledCoreRoot, "dist"), {
   recursive: true,
@@ -152,7 +152,7 @@ run(
     "--product",
     "Pocket DJ",
     "--build",
-    "v1h",
+    "v1i",
     "--schema",
     "17",
     "--legacySchema",
@@ -160,7 +160,7 @@ run(
     "--core",
     "0.3.0",
     "--sourceEntry",
-    "apps/pocket-dj/pocket_dj_v1h_core_bridge.html",
+    "apps/pocket-dj/pocket_dj_v1i_core_bridge.html",
     "--zip",
     relative(repoRoot, outputZip),
     "--output",

@@ -41,14 +41,15 @@ stop.disabled=!chordAudition;
 range.textContent=plan?.label||"Select an active chord bar.";
 hear.setAttribute("aria-label", `Hear this bit: ${range.textContent}`);
 status.textContent=auditionMessage;
+renderChordComparison();
 }
-async function hearChordBit(){
+async function hearChordBit(chordMode=null){
 if(transportBusy) return;
 const plan=chordBitPlan();
 if(!plan) return;
 storeSection();
 stopPlayback({forAudition:true});
-const context={...plan, revision:auditionRevision, source:JSON.stringify(exportProject()), endAudioTime:Infinity};
+const context={...plan, revision:auditionRevision, source:JSON.stringify(exportProject()), endAudioTime:Infinity, chordMode:typeof chordMode==="string"?chordMode:null};
 chordAudition=context;
 auditionMessage="Preparing. Stop cancels.";
 renderAuditionUi();
@@ -75,6 +76,7 @@ if(audioCtx.currentTime >= context.endAudioTime){
 return false;
 }
 function bindChordAuditionControls(){
+bindChordComparison();
 document.getElementById("hearChordBitBtn")?.addEventListener("click", hearChordBit);
 document.getElementById("stopChordBitBtn")?.addEventListener("click", stopPlayback);
 for(const id of ["chordAuditionLead", "chordAuditionTail"]){

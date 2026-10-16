@@ -12,7 +12,7 @@ const outputZip = resolve(outputDir, "pocket-chordsmith-web.zip");
 const bestzipCli = resolve(appRoot, "node_modules", "bestzip", "bin", "cli.js");
 const requiredEntries = [
   "index.html",
-  "pocket_chordsmith_v69_core_bridge.html",
+  "pocket_chordsmith_v70_core_bridge.html",
   "icon.png",
   "pocket-audio-core/dist/api-manifest.json",
   "pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
@@ -100,7 +100,7 @@ for (const entry of requiredEntries) {
 
 // itch and other mirrors can mount the ZIP below a path prefix. Validate the
 // actual built HTML rather than accepting a working monorepo development page.
-for (const htmlEntry of ["index.html", "pocket_chordsmith_v69_core_bridge.html"]) {
+for (const htmlEntry of ["index.html", "pocket_chordsmith_v70_core_bridge.html"]) {
   const html = readFileSync(resolve(distDir, htmlEntry), "utf8");
   const managedAssets = html.matchAll(/<(?:script|link)\b[^>]*\b(?:src|href)=["']([^"']+)["'][^>]*>/gi);
   for (const [, asset] of managedAssets) {
@@ -124,11 +124,11 @@ run(process.execPath, [
   resolve(repoRoot, "scripts", "web-release-provenance.mjs"),
   "--repoRoot", repoRoot,
   "--product", "Pocket Chordsmith",
-  "--build", "v69",
+  "--build", "v70",
   "--schema", "17",
   "--legacySchema", "16",
   "--core", "0.3.0",
-  "--sourceEntry", "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html",
+  "--sourceEntry", "apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html",
   "--zip", relative(repoRoot, outputZip),
   "--output", "local-artifacts/staging/chordsmith-web/pocket-chordsmith-web.release.json",
   ...requiredEntries.flatMap((entry) => ["--required", entry]),

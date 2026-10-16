@@ -515,7 +515,7 @@ PDJ1:
 
 This should not replace `PCS1:`. It should wrap a source Pocket Chordsmith project with DJ performance settings.
 
-Current contract note: `PDJ1_SESSION_FORMAT.md` is the active design note for the live `pocket_dj_v1h_core_bridge.html` session shape. Keep this planning section aligned with that note when field names change.
+Current contract note: `PDJ1_SESSION_FORMAT.md` is the active design note for the live `pocket_dj_v1i_core_bridge.html` session shape. Keep this planning section aligned with that note when field names change.
 
 ### Recommended PDJ1 structure
 

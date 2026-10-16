@@ -75,11 +75,11 @@ function validateSourceTruth() {
   compare("pocket-daw latest published", daw.versions.latestPublished, dawStatus.latestPublishedVersion);
   compare("pocket-daw installed smoke", daw.versions.lastInstalledSmoke, dawStatus.lastInstalledSmoke.version);
 
-  const chordsmithSource = readFileSync(resolve(root, "apps/chordsmith-web/pocket_chordsmith_v69_core_bridge.html"), "utf8");
+  const chordsmithSource = readFileSync(resolve(root, "apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html"), "utf8");
   requireMatch(chordsmithSource, /const PROJECT_SCHEMA_VERSION = 17;/, "Chordsmith schema 17 constant");
   compare("Chordsmith core version", byId.get("pocket-audio-core").versions.package, chordsmithSource.match(/const POCKET_AUDIO_CORE_VERSION = "([^"]+)";/)?.[1]);
   compare("Chordsmith declared core", byId.get("pocket-audio-core").versions.package, byId.get("chordsmith-web").versions.core);
-  const djSource = readFileSync(resolve(root, "apps/pocket-dj/pocket_dj_v1h_core_bridge.html"), "utf8");
+  const djSource = readFileSync(resolve(root, "apps/pocket-dj/pocket_dj_v1i_core_bridge.html"), "utf8");
   requireMatch(djSource, /const PROJECT_SCHEMA_VERSION = 17;/, "Pocket DJ source schema 17 constant");
   compare("Pocket DJ core version", byId.get("pocket-audio-core").versions.package, djSource.match(/const POCKET_AUDIO_CORE_VERSION = "([^"]+)";/)?.[1]);
   compare("Pocket DJ declared core", byId.get("pocket-audio-core").versions.package, byId.get("pocket-dj").versions.core);
