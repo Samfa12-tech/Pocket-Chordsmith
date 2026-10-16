@@ -34,6 +34,7 @@ try {
   runScript("res://addons/pocket_chordsmith/tests/pcs_trust_boundary_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_game_pack_mix_contract_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_wav_ending_test.gd", ["--audio-driver", "Dummy"]);
+  runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_arrangement_ending_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_cache_residency_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_async_loading_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_prepared_worker_test.gd", ["--audio-driver", "Dummy"]);

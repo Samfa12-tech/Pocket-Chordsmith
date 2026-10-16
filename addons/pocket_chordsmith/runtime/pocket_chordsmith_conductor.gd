@@ -84,6 +84,7 @@ var _base_bus_volumes := {}
 var _queued_transition := {}
 var _current_sequence_index := 0
 var _sequence_should_loop := true
+var _default_arrangement_sequence := false
 var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stem_layer_players := {}
@@ -1049,7 +1050,7 @@ func _process(delta: float) -> void:
 	if not transitioned:
 		_process_sequence_progression(previous_tick, current_tick)
 	_handle_end_of_chart()
-	if _has_native_timeline() and not _playing:
+	if _uses_whole_prepared_arrangement() and not _playing:
 		return
 	_update_stinger_finishes()
 	_update_position_fields()
@@ -1075,7 +1076,7 @@ func _handle_end_of_chart() -> void:
 	var length_ticks: int = chart.get_length_ticks()
 	if length_ticks <= 0 or current_tick < length_ticks:
 		return
-	if _has_native_timeline():
+	if _uses_whole_prepared_arrangement():
 		# Gameplay frames can advance before queued PCM reaches the device. Let
 		# the selected Godot players consume their complete rendered endings.
 		if _native_arrangement_audio_playing():
@@ -1250,6 +1251,7 @@ func _emit_due_events() -> void:
 func _initialize_music_state() -> void:
 	if chart == null:
 		return
+	_default_arrangement_sequence = false
 	if playback_profile == null:
 		playback_profile = PlaybackProfile.new()
 	if not current_music_state.is_empty():
@@ -1261,6 +1263,7 @@ func _initialize_music_state() -> void:
 	elif not chart.arrangement.is_empty():
 		current_sequence = chart.arrangement.duplicate()
 		current_loop = "arrangement"
+		_default_arrangement_sequence = true
 	else:
 		current_sequence = ["A"]
 		current_loop = "A"
@@ -1309,6 +1312,7 @@ func _apply_queued_transition() -> void:
 		"section":
 			var section_id := str(transition.get("section_id", ""))
 			if not section_id.is_empty():
+				_default_arrangement_sequence = false
 				current_sequence = [section_id]
 				current_loop = section_id
 				_sequence_should_loop = bool(transition.get("loop", true))
@@ -1317,6 +1321,7 @@ func _apply_queued_transition() -> void:
 		"sequence":
 			var sequence := _string_array(transition.get("sequence", []))
 			if not sequence.is_empty():
+				_default_arrangement_sequence = false
 				current_sequence = sequence
 				current_loop = "-".join(current_sequence)
 				_sequence_should_loop = bool(transition.get("loop", true))
@@ -1340,6 +1345,7 @@ func _apply_music_state(state_name: String) -> void:
 
 
 func _apply_state_definition(state_name: String, seek_to_entry: bool) -> void:
+	_default_arrangement_sequence = false
 	var state_def := _state_definition(state_name)
 	var stinger := str(state_def.get("stinger", ""))
 	if not stinger.is_empty():
@@ -1377,10 +1383,31 @@ func _state_definition(state_name: String) -> Dictionary:
 	return {}
 
 
+func _uses_whole_prepared_arrangement() -> bool:
+	if _has_native_timeline():
+		return true
+	# The ordinary imported full song already contains every section and tail.
+	# Explicit adaptive states/queues and native section loops keep their own
+	# progression; do not infer default intent from a section or loop name.
+	return (
+		_default_arrangement_sequence
+		and playback_profile != null
+		and playback_profile.prepared_playback_scope == "arrangement"
+		and not playback_profile.stem_paths.is_empty()
+		and not playback_profile.loop_prepared_sections
+		and _sequence_matches_arrangement()
+	)
+
+
 func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 	if current_sequence.is_empty() or chart == null:
 		return
-	if _has_native_timeline():
+	if _uses_whole_prepared_arrangement():
+		if not _has_native_timeline():
+			# Keep NEXT_LOOP queue boundaries correct without seeking/restarting
+			# the global PCM at each ordinary section boundary.
+			var occurrence: Dictionary = chart.find_section_at_tick(next_tick)
+			_current_sequence_index = int(occurrence.get("arrangement_index", 0))
 		return # The one global occurrence ends/loops only after its rendered tail.
 	var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 	if section_info.is_empty():
