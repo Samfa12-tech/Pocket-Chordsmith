@@ -1,11 +1,13 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.57",
+  "sourceVersion": "0.6.58",
   "projectSchemaVersion": 3,
   "latestPublishedVersion": "0.6.50",
   "latestPublishedTag": "pocket-daw-v0.6.50",
   "latestPublishedCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
   "unreleasedSourceNotes": [
+    "0.6.58 is a source-only security replacement candidate: rustls 0.23.40 to 0.23.46 and its required rustls-webpki 0.103.13 to 0.103.14 patch. No app, updater-plugin, reqwest, capture, DSP, project-schema or signing-policy behavior is changed. No 0.6.58 installer, receipt, installed acceptance or publication exists. Review the exact source and locked Windows tests before preparing a replacement installer.",
+    "The frozen 0.6.57 candidate at fc619a1dfaacf8c07b86147b5dcbf39058e56032 passed exact-installed candidate verification and independent acceptance. Its artifacts and private evidence remain immutable; publication was paused for the Windows rustls advisory. Earlier source-only status notes below are historical checkpoints, not the final 0.6.57 acceptance. That acceptance does not transfer to 0.6.58. Latest public release remains 0.6.50; historical published smoke fields remain unchanged.",
     "0.6.57 is a separate source-only Library focus correction. A delayed background startup readiness refresh replaced live sample controls after selection, including unfinished search/IME and placement inputs. Readiness state still updates, but a focused Library workbench keeps its live DOM until an intentional surface change. Native clock, DSP, capture, project history and user update actions are unchanged. No0.6.57 installer or installed acceptance exists.",
     "Exact0.6.56 source38f70df received scoped transport/hint acceptance and terminal green CI/CodeQL. Its first preparation failed before packaging on a cold Finish deadline and Library focus loss. A controlled retry was deliberately stopped before packaging after the delayed Library focus loss reproduced in a real frontend. Neither attempt created an installer or receipt. All failures, diagnostic runs, interrupted output and frozen0.6.54/private0.6.53 evidence remain retained. No fresh microphone action occurred.",
     "0.6.56 is a separate source-only correction to the main-based integration. Ordinary Play and Restart share preparation/request and engine-generation ownership so Stop, Pause, Seek or a newer start cannot be undone by a delayed completion. Existing MIDI/Finish ownership is composed, not replaced. Residency hints retain only the latest revision per asset, with at most256 entries and512 characters per key; forgotten hints preserve full-byte fallback. No0.6.56 installer or installed acceptance exists.",
