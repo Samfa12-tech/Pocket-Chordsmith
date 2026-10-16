@@ -24,6 +24,7 @@ function appHarness(state: AppState) {
     liveUpdateCount: number;
     midiInputStartToken: number;
     midiInputStartPending: boolean;
+    transportStartToken: number;
     applyAiBridgeLiveCommand(command: unknown): AppState;
     applyAiBridgeLiveCommands(commands: unknown[]): unknown;
     handleAiBridgeControl(input: Record<string, unknown>): Promise<unknown>;
@@ -39,6 +40,7 @@ function appHarness(state: AppState) {
   app.liveUpdateCount = 0;
   app.midiInputStartToken = 0;
   app.midiInputStartPending = false;
+  app.transportStartToken = 0;
   app.render = () => undefined;
   app.updateLiveDom = () => undefined;
   return app;

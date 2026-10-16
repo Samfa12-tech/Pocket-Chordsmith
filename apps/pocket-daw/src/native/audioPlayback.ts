@@ -324,21 +324,28 @@ export interface NativeAudioStartResult {
 }
 
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
+const MAX_NATIVE_ASSET_RESIDENCY_HINTS = 256;
+const MAX_NATIVE_ASSET_HINT_KEY_CHARS = 512;
 
 export interface NativeStartupTimings {
+  residencyHintCount: number;
+  residencyHintLimit: number;
   preload: { elapsedMs: number; invokeMs: number; sentAssetCount: number; sentByteCount: number; residentHitCount: number } | null;
   start: { elapsedMs: number; invokeMs: number; sentByteCount: number; outcome: string } | null;
 }
 
 export class NativeAudioPlaybackBridge {
   private monitorSequence = 0;
-  private readonly knownNativeAssetRevisions = new Set<string>();
+  // Hints only avoid transfers; forgetting one must retain the full-byte path.
+  // Bound both history and individual key size independently of native PCM LRU.
+  private readonly knownNativeAssetRevisions = new Map<string, string>();
   private assetResidencyGeneration = 0;
   private playbackRequest = 0;
-  private startupTimings: NativeStartupTimings = { preload: null, start: null };
+  private startupTimings: Pick<NativeStartupTimings, "preload" | "start"> = { preload: null, start: null };
 
   getStartupTimings(): NativeStartupTimings {
-    return { preload: this.startupTimings.preload && { ...this.startupTimings.preload },
+    return { residencyHintCount: this.knownNativeAssetRevisions.size, residencyHintLimit: MAX_NATIVE_ASSET_RESIDENCY_HINTS,
+      preload: this.startupTimings.preload && { ...this.startupTimings.preload },
       start: this.startupTimings.start && { ...this.startupTimings.start } };
   }
 
@@ -372,7 +379,7 @@ export class NativeAudioPlaybackBridge {
       const status = await invokeStart(this.withCachedAssetHints(payload));
       if (!isCurrent()) return cancelled();
       if (residencyGeneration === this.assetResidencyGeneration) {
-        payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
+        payload.assets?.forEach((asset) => this.rememberAssetHint(asset.id, nativeAssetCacheHintKey(asset)));
       }
       return finish({ started: true, status, error: null });
     } catch (error) {
@@ -386,15 +393,15 @@ export class NativeAudioPlaybackBridge {
       // The native cache is bounded and may have evicted an asset that this
       // bridge previously marked as resident. Retry this start once with the
       // original bytes, and stop treating the missing revision as resident.
-      this.knownNativeAssetRevisions.delete(nativeAssetCacheHintKey(missingAsset));
       const missingAssetKey = nativeAssetCacheHintKey(missingAsset);
+      if (this.knownNativeAssetRevisions.get(missingAsset.id) === missingAssetKey) this.knownNativeAssetRevisions.delete(missingAsset.id);
       try {
         if (!isCurrent()) return cancelled();
         const status = await invokeStart(payload);
         if (!isCurrent()) return cancelled();
         if (residencyGeneration === this.assetResidencyGeneration) payload.assets?.forEach((asset) => {
           const cacheHintKey = nativeAssetCacheHintKey(asset);
-          if (cacheHintKey !== missingAssetKey) this.knownNativeAssetRevisions.add(cacheHintKey);
+          if (cacheHintKey !== missingAssetKey) this.rememberAssetHint(asset.id, cacheHintKey);
         });
         return finish({ started: true, status, error: null });
       } catch (retryError) {
@@ -414,7 +421,8 @@ export class NativeAudioPlaybackBridge {
     let loaded = 0;
     for (const asset of assets) {
       const cacheHintKey = nativeAssetCacheHintKey(asset);
-      if (this.knownNativeAssetRevisions.has(cacheHintKey)) {
+      if (this.knownNativeAssetRevisions.get(asset.id) === cacheHintKey) {
+        this.rememberAssetHint(asset.id, cacheHintKey);
         timing.residentHitCount += 1;
         loaded += 1;
         continue;
@@ -425,7 +433,7 @@ export class NativeAudioPlaybackBridge {
         timing.sentAssetCount += 1;
         timing.sentByteCount += asset.bytes?.length || 0;
         await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
-        if (residencyGeneration === this.assetResidencyGeneration) this.knownNativeAssetRevisions.add(cacheHintKey);
+        if (residencyGeneration === this.assetResidencyGeneration) this.rememberAssetHint(asset.id, cacheHintKey);
         loaded += 1;
       } catch {
         // Playback can still send bytes for assets that fail to preload.
@@ -447,7 +455,7 @@ export class NativeAudioPlaybackBridge {
 
   async stop(options: { retainDecodedAssets?: boolean } = {}): Promise<NativeAudioStatus | null> {
     const request = ++this.playbackRequest;
-    const retained = options.retainDecodedAssets ? new Set(this.knownNativeAssetRevisions) : null;
+    const retained = options.retainDecodedAssets ? new Map(this.knownNativeAssetRevisions) : null;
     // Cancel old acknowledgments even when retaining the bounded native cache.
     // Restore only previously proven hints after this exact Stop is acknowledged.
     this.invalidateAssetResidency();
@@ -457,7 +465,9 @@ export class NativeAudioPlaybackBridge {
         options.retainDecodedAssets ? { retainDecodedAssets: true } : undefined, request);
       if (retained && status && (status.decodedAssetCacheBytes || 0) > 0
         && request === this.playbackRequest && generation === this.assetResidencyGeneration) {
-        for (const key of retained) this.knownNativeAssetRevisions.add(key);
+        for (const [id, key] of retained) {
+          if (!this.knownNativeAssetRevisions.has(id)) this.rememberAssetHint(id, key);
+        }
         return status;
       }
       this.invalidateAssetResidency();
@@ -471,6 +481,15 @@ export class NativeAudioPlaybackBridge {
   private invalidateAssetResidency(): void {
     this.assetResidencyGeneration += 1;
     this.knownNativeAssetRevisions.clear();
+  }
+
+  private rememberAssetHint(id: string, key: string): void {
+    if (key.length > MAX_NATIVE_ASSET_HINT_KEY_CHARS) return;
+    this.knownNativeAssetRevisions.delete(id);
+    this.knownNativeAssetRevisions.set(id, key);
+    while (this.knownNativeAssetRevisions.size > MAX_NATIVE_ASSET_RESIDENCY_HINTS) {
+      this.knownNativeAssetRevisions.delete(this.knownNativeAssetRevisions.keys().next().value!);
+    }
   }
 
   async seek(seconds: number): Promise<NativeAudioStatus | null> {
@@ -510,7 +529,7 @@ export class NativeAudioPlaybackBridge {
     return {
       ...payload,
       assets: payload.assets.map((asset) => {
-        if (!this.knownNativeAssetRevisions.has(nativeAssetCacheHintKey(asset))) return asset;
+        if (this.knownNativeAssetRevisions.get(asset.id) !== nativeAssetCacheHintKey(asset)) return asset;
         const { bytes: _bytes, ...metadataOnly } = asset;
         return metadataOnly;
       })

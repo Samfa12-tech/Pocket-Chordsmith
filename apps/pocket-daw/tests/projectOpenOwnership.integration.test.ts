@@ -44,7 +44,7 @@ function host() {
   state.selectedTrackId = "old-midi"; state.selectedClipId = null; state.selectedClipIds = [];
   Object.assign(app, {
     state, projectFileOpen: new ProjectFileOpen(), recordingStartToken: 0,
-    midiInputStartToken: 0, midiInputStartPending: false, midiInputRecordingRuntime: null,
+    midiInputStartToken: 0, midiInputStartPending: false, midiInputRecordingRuntime: null, transportStartToken: 0,
     engine: { isPlaying: () => true, stop: vi.fn(), setProject: vi.fn(), getTransportRevision: () => 0 },
     fileInput: { click: vi.fn() }, render: vi.fn(), stopLiveMetronome: vi.fn(),
     stopRecordingTimer: vi.fn(), saveAutosaveSnapshot: vi.fn(),
@@ -91,6 +91,23 @@ function stoppedHost() {
   return { app, preparing, release };
 }
 
+function ordinaryTransportHost() {
+  const result = stoppedHost(), app = result.app;
+  let revision = 0;
+  Object.assign(app, { finishActionToken: 0, finishContext: null, selectionAuditionToken: 0, selectionAuditionContext: null,
+    aiBridgeLiveStatus: () => ({ transport: { playing: app.state.playing }, recording: { status: "idle" } }) });
+  Object.assign(app.engine, {
+    getTransportRevision: () => revision,
+    getDiagnostics: () => ({ nativeAudio: { lastError: null } }),
+    play: vi.fn(async () => { revision++; app.state.playing = true; }),
+    restart: vi.fn(async () => { revision += 2; app.state.playing = true; }),
+    stop: vi.fn(() => { revision++; app.state.playing = false; }),
+    pause: vi.fn(() => { revision++; app.state.playing = false; }),
+    seekToBar: vi.fn(() => { revision++; })
+  });
+  return result;
+}
+
 function addReloadableAudio(app: any) {
   const imported = addImportedAudioMedia(currentProject(app.state), { name: "owned-fixture.wav", uri: "C:/owned-fixture.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 44100, channels: 1 });
   app.state.undoStack.present = placeAudioClipOnTimeline(imported.project, imported.item.id, 1).project;
@@ -113,6 +130,86 @@ describe("actual App project-open/MIDI ownership", () => {
     vi.mocked(openProjectFileNative).mockResolvedValue(selection());
   });
   afterEach(() => { clearAudioBufferCache(); vi.unstubAllGlobals(); });
+
+  it.each(["play", "restart"])("bridge Stop prevents deferred ordinary %s from starting afterward", async action => {
+    const { app, preparing, release } = ordinaryTransportHost();
+    const starting = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action }) });
+    await preparing.promise;
+    const stopped = await app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "stop" }) });
+    const busyAfterStop = app.state.busyMessage;
+    release.resolve(); await starting;
+    expect(stopped).toMatchObject({ ok: true, status: "stopped", transport: { playing: false } });
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.engine.restart).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(app.startLiveMetronome).not.toHaveBeenCalled();
+    expect(busyAfterStop).toBeNull();
+    expect(app.state.busyMessage).toBeNull();
+  });
+
+  it.each(["pause", "seek_bar"])("a bridge %s supersedes deferred ordinary Play", async action => {
+    const { app, preparing, release } = ordinaryTransportHost();
+    const starting = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "play" }) });
+    await preparing.promise;
+    await app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action, bar: 2 }) });
+    release.resolve(); await starting;
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(app.startLiveMetronome).not.toHaveBeenCalled();
+  });
+
+  it.each(["play", "restart"])("button/menu Stop cancels actual ordinary %s preparation", async action => {
+    const { app, preparing, release } = ordinaryTransportHost();
+    const starting = app.dispatch(action); await preparing.promise;
+    await app.dispatch("stop");
+    const busyAfterStop = app.state.busyMessage;
+    release.resolve(); await starting;
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.engine.restart).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(busyAfterStop).toBeNull();
+  });
+
+  it.each(["play", "restart"])("current ordinary %s still starts after preparation", async action => {
+    const { app, preparing, release } = ordinaryTransportHost();
+    const starting = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action }) });
+    await preparing.promise; release.resolve();
+    const result = await starting;
+    expect(result.ok).toBe(true);
+    expect(app.engine[action]).toHaveBeenCalledOnce();
+    expect(app.state.playing).toBe(true);
+    expect(app.state.busyMessage).toBeNull();
+    expect(app.startLiveMetronome).toHaveBeenCalledOnce();
+  });
+
+  it("ordinary Stop during busy paint prevents native preparation dispatch", async () => {
+    const { app, release } = ordinaryTransportHost(), painted = deferred<void>(), releasePaint = deferred<void>();
+    app.nextPaint = async () => { painted.resolve(); await releasePaint.promise; };
+    const starting = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "play" }) });
+    await painted.promise;
+    await app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "stop" }) });
+    releasePaint.resolve(); release.resolve(); await starting;
+    expect(app.engine.prepareNativeRuntimeAudioForPlayback).not.toHaveBeenCalled();
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.busyMessage).toBeNull();
+  });
+
+  it("a newer ordinary Play owns preparation and the older completion cannot clear it", async () => {
+    const { app, preparing, release } = ordinaryTransportHost(), nextPreparing = deferred<void>(), releaseNext = deferred<void>();
+    const first = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "play" }) });
+    await preparing.promise;
+    app.nativeAudioPreparationMessage = () => "New ordinary Play owns preparation";
+    app.engine.prepareNativeRuntimeAudioForPlayback.mockImplementationOnce(async () => { nextPreparing.resolve(); await releaseNext.promise; });
+    const next = app.handleAiBridgeRequest({ kind: "control", body: JSON.stringify({ action: "play" }) });
+    await nextPreparing.promise;
+    release.resolve(); await first;
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.busyMessage).toBe("New ordinary Play owns preparation");
+    releaseNext.resolve(); await next;
+    expect(app.engine.play).toHaveBeenCalledOnce();
+    expect(app.state.playing).toBe(true);
+    expect(app.state.busyMessage).toBeNull();
+  });
 
   it("blocks Prepare, examples, A/B and Apply while actual MIDI permission is pending", async () => {
     const permission = deferred<unknown>(), device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: () => permission.promise });

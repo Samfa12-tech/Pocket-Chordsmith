@@ -2,7 +2,10 @@
 
 This branch starts from main `4f156e2c9857b40f7c79b3d6761d77c6683545d2`.
 It is an independent review candidate, not a merged source or public DAW release.
-DAW source is 0.6.55; no installer or installed acceptance exists for it.
+DAW source is now 0.6.56; no installer or installed acceptance exists for it.
+The0.6.55 preparation was stopped after independent review found an ordinary
+Play-after-Stop race and unbounded hint history. See
+[the corrected ownership and metadata policy](../apps/pocket-daw/docs/ORDINARY_TRANSPORT_STOP_OWNERSHIP_2026-10-17.md).
 
 ## Included and held scope
 
@@ -95,7 +98,7 @@ The 0.6.54 receipt cannot be inherited by this different full commit.
 Reef Sweep, dependency PRs71–75, accounts, credentials, security settings,
 licences and spending are unchanged.
 
-## Executed source validation
+## Executed 0.6.55 source validation (retained historical snapshot)
 
 - Manifest-owned DAW suite: 1,278 tests in 108 files passed. The earlier direct
   Vitest invocation incorrectly included a Node test file and exposed the stale

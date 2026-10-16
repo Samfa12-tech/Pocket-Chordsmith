@@ -555,8 +555,8 @@ test("real analysis worker keeps long-song CPU work off the UI and terminates pr
     await new Promise(resolve => setTimeout(resolve, 100)); clearInterval(timer);
     return { durationSeconds: 300, bytes: 44 + frames * 8, transferred: buffer.byteLength === 0, beats, maxGapMs: maxGap, workerError, completedBeforeCancel: completed, elapsedMs: performance.now() - started, cancelAndSettleMs: performance.now() - cancelledAt };
   }, workerName);
-  expect(report.workerError).toBeNull(); expect(report.transferred).toBe(true); expect(report.completedBeforeCancel).toBe(false); expect(report.beats).toBeGreaterThan(8); expect(report.maxGapMs).toBeLessThan(150); expect(report.cancelAndSettleMs).toBeLessThan(250);
   await testInfo.attach("long-song-worker-responsiveness", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  expect(report.workerError).toBeNull(); expect(report.transferred).toBe(true); expect(report.completedBeforeCancel).toBe(false); expect(report.beats).toBeGreaterThan(8); expect(report.maxGapMs).toBeLessThan(150); expect(report.cancelAndSettleMs).toBeLessThan(250);
 });
 
 test("real worker completes five-minute decoded output analysis while the UI remains responsive", async ({ page }, testInfo) => {
@@ -564,25 +564,37 @@ test("real worker completes five-minute decoded output analysis while the UI rem
   test.skip(!process.env.POCKET_DAW_UI_STATIC_DIR, "Requires the production worker bundle.");
   const workerName = (await readdir(resolve(process.env.POCKET_DAW_UI_STATIC_DIR, "assets"))).find(name => /^finishAnalysis\.worker-.*\.js$/.test(name));
   await page.goto("/");
+  const profiler = process.env.POCKET_DAW_WORKER_PROFILE ? await page.context().newCDPSession(page) : null;
+  if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
   const report = await page.evaluate(async workerName => {
     const rate = 48000, frames = rate * 300, buffer = new ArrayBuffer(44 + frames * 8), view = new DataView(buffer);
     const ascii = (at, text) => [...text].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
     ascii(0, "RIFF"); view.setUint32(4, buffer.byteLength - 8, true); ascii(8, "WAVE"); ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 3, true); view.setUint16(22, 2, true); view.setUint32(24, rate, true); view.setUint32(28, rate * 8, true); view.setUint16(32, 8, true); view.setUint16(34, 32, true); ascii(36, "data"); view.setUint32(40, frames * 8, true);
     const pcm = new Float32Array(buffer, 44), cycle = Float32Array.from({ length: 96 }, (_, i) => 0.2 * Math.sin(i * 2 * Math.PI / 96));
     for (let i = 0; i < frames; i++) { pcm[i * 2] = cycle[i % 96]; pcm[i * 2 + 1] = cycle[i % 96]; }
-    let beats = 0, maxGap = 0, last = performance.now();
-    const timer = setInterval(() => { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now; beats++; }, 10);
+    let beats = 0, maxGap = 0, last = performance.now(), analysisAcknowledgedMs = null;
+    const observedFrom = last, longTasks = [], largeGaps = [];
+    const observeTask = entry => { if (entry.startTime >= observedFrom && longTasks.length < 32) longTasks.push({ atMs: entry.startTime - observedFrom, durationMs: entry.duration, name: entry.name }); };
+    const observer = PerformanceObserver.supportedEntryTypes.includes("longtask") ? new PerformanceObserver(list => list.getEntries().forEach(observeTask)) : null;
+    observer?.observe({ type: "longtask", buffered: true });
+    const timer = setInterval(() => { const now = performance.now(), gap = now - last; maxGap = Math.max(maxGap, gap); if (gap > 50 && largeGaps.length < 32) largeGaps.push({ atMs: now - observedFrom, durationMs: gap }); last = now; beats++; }, 10);
     const worker = new Worker(`/assets/${workerName}`, { type: "module" });
     const started = performance.now();
     try {
       const metrics = await new Promise((resolve, reject) => {
         worker.onerror = event => reject(new Error(event.message));
-        worker.onmessage = ({ data }) => { if (data.phase === "analysing") return; if (data.ok) resolve(data.measurements); else reject(new Error(data.error)); };
+        worker.onmessage = ({ data }) => { if (data.phase === "analysing") { analysisAcknowledgedMs = performance.now() - started; return; } if (data.ok) resolve(data.measurements); else reject(new Error(data.error)); };
         worker.postMessage({ buffer, range: { startSeconds: 0, endSeconds: 300 } }, [buffer]);
       });
-      return { seconds: 300, sampleRate: rate, bytes: 44 + frames * 8, elapsedMs: performance.now() - started, beats, maxGapMs: maxGap, metrics };
-    } finally { clearInterval(timer); worker.terminate(); }
+      observer?.takeRecords().forEach(observeTask);
+      return { seconds: 300, sampleRate: rate, bytes: 44 + frames * 8, elapsedMs: performance.now() - started, beats, maxGapMs: maxGap, analysisAcknowledgedMs, longTasks, largeGaps, visibility: document.visibilityState, hardwareConcurrency: navigator.hardwareConcurrency, metrics };
+    } finally { clearInterval(timer); worker.terminate(); observer?.disconnect(); }
   }, workerName);
-  expect(report.metrics.durationSeconds).toBe(300); expect(report.metrics.nonFiniteSamples).toBe(0); expect(report.metrics.integratedLufs).not.toBeNull(); expect(report.metrics.truePeakDbtp).toBeCloseTo(-13.9794, 2); expect(report.beats).toBeGreaterThan(10); expect(report.maxGapMs).toBeLessThan(150);
+  if (profiler) {
+    const profile = await profiler.send("Profiler.stop");
+    await testInfo.attach("completed-worker-main-thread-profile", { body: JSON.stringify(profile), contentType: "application/json" });
+    await profiler.detach();
+  }
   await testInfo.attach("completed-long-song-worker-analysis", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  expect(report.metrics.durationSeconds).toBe(300); expect(report.metrics.nonFiniteSamples).toBe(0); expect(report.metrics.integratedLufs).not.toBeNull(); expect(report.metrics.truePeakDbtp).toBeCloseTo(-13.9794, 2); expect(report.beats).toBeGreaterThan(10); expect(report.maxGapMs).toBeLessThan(150);
 });

@@ -11,7 +11,7 @@ have not changed. Existing song/sound IDs, PCS1 and legacy JSON remain supported
 | Chordsmith | v70, Core0.3.0; exact published source a31ffae545e0d50b5024dd1be746b834d6f7bed3 | itch pocket-audio-core build2138287 and verified website mirror | Already published; this integration preserves its product paths exactly |
 | DJ | v1i, Core0.3.0; same exact published source | itch html build2138297 and verified website mirror | Already published; no re-upload here |
 | Core | 0.3.0, private=true | Bundled in the published browser products; no npm release | Repository/workspace only |
-| DAW | 0.6.55 source only; frozen0.6.54 remains retained | GitHub0.6.50, ec3f783b24abdd85d46229c2893ea953e96248cd | Independent integration review, exact installer, installed gates and truthful final evidence |
+| DAW | 0.6.56 source only;0.6.55 prepare stopped, frozen0.6.54 retained | GitHub0.6.50, ec3f783b24abdd85d46229c2893ea953e96248cd | Independent integration review, exact installer, installed gates and truthful final evidence |
 | Godot | Main/1.2.0 unchanged here;1.3.0 remains on held PR127 | itch godot-addon, official Store and Library5174 show1.2.0 | No addon publication or held source integration here |
 
 Fresh butler reads confirm the named Chordsmith/DJ channels. The DAW itch

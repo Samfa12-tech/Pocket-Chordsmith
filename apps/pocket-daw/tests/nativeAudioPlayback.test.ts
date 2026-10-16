@@ -80,6 +80,49 @@ function status(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
 }
 
 describe("native audio playback bridge", () => {
+  it("keeps only the latest hint for one asset across a thousand warm revisions", async () => {
+    const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true,
+      async invoke() { return status({ decodedAssetCacheBytes: 32 }) as never; }
+    }));
+    for (let revision = 0; revision < 1000; revision++) {
+      await bridge.preloadAssets([{ id: "revised", name: "loop.wav", sourceHash: String(revision), sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] }]);
+      await bridge.stop({ retainDecodedAssets: true });
+    }
+    expect((bridge as unknown as { knownNativeAssetRevisions: { size: number } }).knownNativeAssetRevisions.size).toBe(1);
+  });
+
+  it("bounds distinct residency hints and sends PCM again for a pruned hint", async () => {
+    const starts: Array<{ assets: Array<{ bytes?: number[] }> }> = [];
+    const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true,
+      async invoke(command, args) {
+        if (command === "native_audio_start") starts.push(args?.payload as typeof starts[number]);
+        return status({ decodedAssetCacheBytes: 32 }) as never;
+      }
+    }));
+    const asset = (index: number) => ({ id: `asset-${index}`, name: "loop.wav", sourceHash: "v1", sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] });
+    for (let index = 0; index < 1000; index++) await bridge.preloadAssets([asset(index)]);
+    await bridge.stop({ retainDecodedAssets: true });
+    expect((bridge as unknown as { knownNativeAssetRevisions: { size: number } }).knownNativeAssetRevisions.size).toBeLessThanOrEqual(256);
+    await bridge.start(buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset(0)], regions: [] }));
+    expect(starts.at(-1)?.assets[0].bytes).toEqual(asset(0).bytes);
+    await bridge.start(buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset(999)], regions: [] }));
+    expect(starts.at(-1)?.assets[0].bytes).toBeUndefined();
+  });
+
+  it("does not retain oversized hint keys or omit their PCM", async () => {
+    const starts: Array<{ assets: Array<{ bytes?: number[] }> }> = [];
+    const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true,
+      async invoke(command, args) {
+        if (command === "native_audio_start") starts.push(args?.payload as typeof starts[number]);
+        return status({ decodedAssetCacheBytes: 32 }) as never;
+      }
+    }));
+    const asset = { id: "large-key", name: "loop.wav", sourceHash: "x".repeat(513), sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] };
+    await bridge.preloadAssets([asset]); await bridge.stop({ retainDecodedAssets: true });
+    await bridge.start(buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset], regions: [] }));
+    expect(bridge.getStartupTimings().residencyHintCount).toBe(0);
+    expect(starts[0].assets[0].bytes).toEqual(asset.bytes);
+  });
   it("retains proven revisions across ordinary Stop without resending PCM, but clears them on teardown", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true,

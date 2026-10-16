@@ -474,6 +474,7 @@ export class App {
   private liveUpdateCount = 0;
   private performanceDiagnostics = new PerformanceDiagnosticsRecorder();
   private transportStartupTiming: { preparationMs: number; enginePlayMs: number; totalMs: number; phase: string } | null = null;
+  private transportStartToken = 0;
   private mixerGestureStarts = new Map<string, number>();
   private playbackRenderScheduler = new PlaybackRenderScheduler();
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
@@ -1346,12 +1347,14 @@ export class App {
     }
     if (action === "pause") {
       this.engine.pause();
+      this.clearCancelledTransportPreparation();
       this.stopLiveMetronome();
       this.render({ preserveScroll: true });
       return { ok: true, action, status: "paused", transport: this.aiBridgeLiveStatus().transport };
     }
     if (action === "stop") {
       this.engine.stop({ retainDecodedAssets: true });
+      this.clearCancelledTransportPreparation();
       if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
       this.samplePreviewTimer = null;
       this.state.previewingSampleLibraryId = null;
@@ -1371,6 +1374,7 @@ export class App {
     if (action === "seek_bar") {
       const bar = numberInput(input.bar, "bar");
       this.seekToBar(bar, true);
+      this.clearCancelledTransportPreparation();
       this.render({ preserveScroll: true });
       return { ok: true, action, bar: this.state.playheadBar, transport: this.aiBridgeLiveStatus().transport };
     }
@@ -4030,10 +4034,12 @@ export class App {
     if (action === "play") await this.playTransport();
     if (action === "pause") {
       this.engine.pause();
+      this.clearCancelledTransportPreparation();
       this.stopLiveMetronome();
     }
     if (action === "stop") {
       this.engine.stop({ retainDecodedAssets: true });
+      this.clearCancelledTransportPreparation();
       this.stopLiveMetronome();
     }
     if (action === "restart") await this.restartTransport();
@@ -4726,6 +4732,7 @@ export class App {
     if (command === "play-pause") {
       if (this.state.playing) {
         this.engine.pause();
+        this.clearCancelledTransportPreparation();
         this.stopLiveMetronome();
       } else {
         await this.playTransport();
@@ -4786,13 +4793,32 @@ export class App {
   }
 
   private async playTransport(options: TimelineAudioPreparationOptions = {}) {
-    const isCurrent = options.isCurrent || (() => true);
+    await this.startPreparedTransport("play", options);
+  }
+
+  private clearCancelledTransportPreparation() {
+    if (this.transportBusyOwner && !this.transportBusyOwner.isCurrent()) {
+      this.transportBusyOwner = null;
+      this.state.busyMessage = null;
+    }
+  }
+
+  private async startPreparedTransport(kind: "play" | "restart", options: TimelineAudioPreparationOptions = {}) {
+    if (options.isCurrent && !options.isCurrent()) return;
+    const token = ++this.transportStartToken;
+    let transportRevision = this.engine.getTransportRevision();
+    const isCurrent = () => token === this.transportStartToken
+      && transportRevision === this.engine.getTransportRevision()
+      && (!options.isCurrent || options.isCurrent());
     if (!isCurrent()) return;
+    this.clearCancelledTransportPreparation();
     if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
     this.samplePreviewTimer = null;
     this.state.previewingSampleLibraryId = null;
-    if (this.engine.canResumePausedNativePlayback()) {
-      await this.engine.play();
+    if (kind === "play" && this.engine.canResumePausedNativePlayback()) {
+      const starting = this.engine.play();
+      transportRevision = this.engine.getTransportRevision();
+      await starting;
       return;
     }
 
@@ -4802,14 +4828,18 @@ export class App {
     this.transportStartupTiming = timing;
     let hydration: Awaited<ReturnType<typeof this.hydrateTimelineAudioBuffers>> = { total: 0, loaded: 0, cached: 0, missing: [] };
     try {
-      const prepared = await this.prepareTimelineAudioForPlayback("native playback", {
-        ...options, onBusyOwner: (owner) => { busyOwner = owner; }
+      const prepared = await this.prepareTimelineAudioForPlayback(kind === "restart" ? "restart" : "native playback", {
+        ...options, isCurrent, onBusyOwner: (owner) => { busyOwner = owner; }
       });
       timing.preparationMs = performance.now() - began;
       timing.phase = "engine-play";
       if (!isCurrent()) return;
       hydration = prepared.hydration;
-      await this.engine.play();
+      const starting = kind === "restart" ? this.engine.restart() : this.engine.play();
+      // Engine start synchronously reserves its native generation before its
+      // first await. Later Stop/Pause/Seek must still invalidate this owner.
+      transportRevision = this.engine.getTransportRevision();
+      await starting;
       timing.enginePlayMs = performance.now() - began - timing.preparationMs;
       timing.phase = "completed";
       if (!isCurrent()) return;
@@ -4820,6 +4850,8 @@ export class App {
       } else if (hydration.missing.length) {
         this.state.status = `Could not load ${hydration.missing.length} audio file${hydration.missing.length === 1 ? "" : "s"}; playback will use available material.`;
       }
+    } catch (error) {
+      if (isCurrent()) throw error;
     } finally {
       if (busyOwner && this.transportBusyOwner === busyOwner) {
         this.transportBusyOwner = null;
@@ -4827,6 +4859,7 @@ export class App {
         this.render({ preserveScroll: true });
       }
       timing.totalMs = performance.now() - began;
+      if (!isCurrent()) timing.phase = "cancelled";
     }
   }
 
@@ -4874,19 +4907,7 @@ export class App {
   }
 
   private async restartTransport() {
-    let showedBusy = false;
-    try {
-      const prepared = await this.prepareTimelineAudioForPlayback("restart");
-      showedBusy = prepared.showedBusy;
-      await this.engine.restart();
-      this.syncVst3RenderBoundaryState();
-      this.startLiveMetronome(false);
-    } finally {
-      if (showedBusy) {
-        this.state.busyMessage = null;
-        this.render({ preserveScroll: true });
-      }
-    }
+    await this.startPreparedTransport("restart");
   }
 
   private panicMidiPreview() {
