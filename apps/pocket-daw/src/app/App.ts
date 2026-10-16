@@ -689,7 +689,17 @@ export class App {
       if (status) status.title = this.state.status;
       return;
     }
+    const focused = document.activeElement instanceof HTMLElement && this.root.contains(document.activeElement) ? document.activeElement : null;
+    const selector = focused?.id ? `#${CSS.escape(focused.id)}`
+      : focused?.dataset.action ? `[data-action="${CSS.escape(focused.dataset.action)}"]` : null;
+    const index = selector ? Array.from(this.root.querySelectorAll(selector)).indexOf(focused!) : -1;
     this.render({ preserveScroll: true });
+    if (selector && document.activeElement === document.body) {
+      const matches = Array.from(this.root.querySelectorAll<HTMLElement>(selector));
+      const eligible = (node: HTMLElement | undefined) => !!node && !node.matches(":disabled") && !node.closest("[inert]") && node.getClientRects().length > 0;
+      const target = eligible(matches[index]) ? matches[index] : matches.find(eligible);
+      target?.focus({ preventScroll: true });
+    }
   }
 
   private hostedProjectInstances(project: PocketDawProject = currentProject(this.state)): Array<{

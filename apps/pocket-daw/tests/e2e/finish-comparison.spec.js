@@ -222,6 +222,41 @@ test("explicit updater checks still refresh their visible panel while Export is 
   expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
 });
 
+for (const phase of ["updater begin", "updater completion", "startup discovery"]) {
+  test(`passive ${phase} preserves returned import trigger focus after File closes`, async ({ page }, testInfo) => {
+    await fixture(page, false, { holdDiscovery: true, holdStartupUpdate: true });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Import Chordsmith", exact: true }).click();
+    await expect(page.locator("#importText")).toBeFocused();
+    await page.locator("#importText").fill("{}");
+    await page.locator('[data-action="import-text"]').click();
+    await expect(page.locator("#importText")).toBeFocused();
+    const trigger = page.locator('[data-action="import-focus"]');
+    await page.waitForFunction(() => window.__discoveryReplies.length === 2 && !!window.__fireStartupUpdate);
+    if (phase === "updater completion") {
+      await page.evaluate(() => window.__fireStartupUpdate());
+      await page.waitForFunction(() => !!window.__resolveStartupCheck);
+    }
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-file-backdrop="true"]')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await page.evaluate(phase => {
+      window.__observeDiscovery = true;
+      window.__returnedTrigger = document.activeElement;
+      if (phase === "updater begin") window.__fireStartupUpdate();
+      else if (phase === "updater completion") window.__resolveStartupCheck(false);
+      else window.__discoveryReplies.forEach(reply => reply());
+    }, phase);
+    if (phase === "updater begin") await page.waitForFunction(() => !!window.__resolveStartupCheck);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const result = await page.evaluate(() => ({ focusedAction: document.activeElement?.dataset?.action || null,
+      activeTag: document.activeElement?.tagName, oldNodeConnected: window.__returnedTrigger.isConnected,
+      stacks: window.__discoveryRenderStacks }));
+    await testInfo.attach("returned-import-focus.json", { body: JSON.stringify(result, null, 2), contentType: "application/json" });
+    await expect(trigger).toBeFocused();
+  });
+}
+
 async function openFinish(page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.locator('[data-action="lower-dock-export-details"]').first().click();

@@ -1679,3 +1679,23 @@ Fresh rendered four-route UI/audio results and full216000frame native comparison
 remain successful; .801375s raw wait and .4093s observed endpoint overshoot remain
 explicit failed-performance evidence, never device/listening acceptance.
 See prepared-audition report for details. No public release or new installer.
+
+## Controlled correction to PR113's two browser failures
+
+Exact hosted logs/artifacts retained. DJ loader-held desktop/phone tests reproduce
+the same null-session deck TypeError; the fixture evaluated before asynchronous
+handleImport finished. It now proves the pending/null state, releases the actual
+Core loader, waits for visible deck, then retains all original strict assertions.
+Other immediate Campfire imports await visible deck too; no DJ product change.
+
+DAW updater begin/completion and startup-discovery release after File close each
+reproduce focus loss. Passive full renders replaced the returned Import trigger;
+new code bookmarks its ID/action+index and restores only a visible enabled/noninert
+equivalent when focus fell to body, preserving intentional dialog focus. Hosted
+trace's imported{} Pocket rail trigger is included in final regressions.
+Full DJ94/94desktop-phone +scheduler6 and DAW59/59browser pass, zero skips.
+Final expanded import/rail controls3/3 pass. Changed-source423checks/33suites pass;
+one14-check browser suite initially unavailable due omitted browser path, then
+14/14passes with installed path. Original failed invocation retained, not relabeled.
+TypeScript/Vite and root26pass. See DAWdocs/PASSIVE_READINESS_FOCUS_2026-10-16.md.
+No native/capture/dependency/version or installer/publication changes.

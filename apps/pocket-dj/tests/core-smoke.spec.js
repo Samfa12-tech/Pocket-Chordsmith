@@ -12,6 +12,7 @@ test("Campfire import keeps its source identity and plays prepared full voicings
   const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarRegister:"low",guitarStrumMode:"up",sectionBars:{A:1},songSequence:["A"],progressionA:[0],guitarPatternA:["open"],future:{keep:true}};
   await page.locator("#importText").fill(JSON.stringify(source));
   await page.locator("#importBtn").click();
+  await expect(page.locator("#deckScreen")).toBeVisible();
   expect(await page.evaluate(() => session.deck.guitarTone)).toBe("campfire_acoustic");
   expect(await page.evaluate(() => session.source.originalProject)).toEqual(source);
   expect(await page.evaluate(() => state.playing)).toBe(false);
@@ -55,6 +56,7 @@ test("Campfire missing prepared Core fails explicitly without amplifier fallback
   const source = {projectVersion:17,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPatternA:["open"],sectionBars:{A:1}};
   await page.locator("#importText").fill(JSON.stringify(source));
   await page.locator("#importBtn").click();
+  await expect(page.locator("#deckScreen")).toBeVisible();
   await page.evaluate(() => {loadPocketAudioCoreModule=async()=>({});window.__djAmpFallback=0;playGuitar=()=>{window.__djAmpFallback++;};});
   await page.locator("#playBtn").click();
   await expect(page.locator("#statusText")).toContainText("Campfire Acoustic needs the current bundled Pocket Audio Core");
@@ -67,6 +69,7 @@ test("standalone Campfire strum and pick survives saved DJ sessions without chan
   const source = {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPerformanceA:"strum_pick",sectionBars:{A:4},songSequence:["A"],progressionA:[0,0,3,3],guitarPatternA:["scratch"],future:{keep:true}};
   await page.locator("#importText").fill(JSON.stringify(source));
   await page.locator("#importBtn").click();
+  await expect(page.locator("#deckScreen")).toBeVisible();
   expect(await page.evaluate(() => ({active:session.deck.guitarActive,playing:state.playing}))).toEqual({active:true,playing:false});
   await page.locator("#saveBtn").click();
   await page.reload();
@@ -90,6 +93,7 @@ test("Campfire exact rich picks retain fractional timing and a cancelled cold Pl
   const source = {projectVersion:17,key:"D",bpm:76,resolution:4,timeSig:4,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{guitar:{events}}}}};
   await page.locator("#importText").fill(JSON.stringify(source));
   await page.locator("#importBtn").click();
+  await expect(page.locator("#deckScreen")).toBeVisible();
   expect(await page.evaluate(() => session.deck.guitarActive)).toBe(true);
   await page.evaluate(() => {const load=loadPocketAudioCoreModule;window.__djGate=new Promise(resolve=>{window.__releaseDj=resolve;});loadPocketAudioCoreModule=async()=>{await window.__djGate;return load();};});
   await page.locator("#playBtn").click();
@@ -111,9 +115,18 @@ test("Campfire exact rich picks retain fractional timing and a cancelled cold Pl
 test("Campfire custom role track imports use Core stem precedence and survive DJ session restore", async ({ page }) => {
   await page.goto("/apps/pocket-dj/");
   await requireLiveBrowserAudio(page);
+  await page.evaluate(() => {
+    const load = loadPocketAudioCoreModule;
+    const gate = new Promise(resolve => { window.__releaseRoleImport = resolve; });
+    loadPocketAudioCoreModule = async () => { window.__roleImportWaiting = true; await gate; return load(); };
+  });
   const source = {projectVersion:17,key:"D",bpm:76,timeSig:4,resolution:4,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{handPlayed:{role:"GUITAR",future:{keep:true},events:[{tick:0,notes:[50,57,62,66],sound:"campfire_acoustic",direction:"up",velocity:100}]}}}}};
   await page.locator("#importText").fill(JSON.stringify(source));
   await page.locator("#importBtn").click();
+  await page.waitForFunction(() => window.__roleImportWaiting);
+  expect(await page.evaluate(() => session)).toBeNull();
+  await page.evaluate(() => window.__releaseRoleImport());
+  await expect(page.locator("#deckScreen")).toBeVisible();
   expect(await page.evaluate(()=>session.deck.guitarActive)).toBe(true);
   expect(await page.evaluate(()=>pocketDjProjectHasCampfire({sections:{A:{tracks:{guitar:{stem:"melody",role:"guitar",events:[{sound:"campfire_acoustic"}]}}}}}))).toBe(false);
   await page.locator("#playBtn").click();
