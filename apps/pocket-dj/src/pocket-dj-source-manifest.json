@@ -8,6 +8,7 @@
     "src/audio/04-live-engine.js",
     "src/audio/campfire-playback.js",
     "src/transport/05-scheduler.js",
+    "src/transport/contextual-audition.js",
     "src/ui/06-interface.js",
     "src/accessibility/07-help-and-init.js"
   ]

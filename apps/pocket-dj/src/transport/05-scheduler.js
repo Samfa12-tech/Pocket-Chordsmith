@@ -260,11 +260,20 @@ function scheduleUiAt(time, callback){
 }
 function schedulerTick(){
   if(!state.playing || !session || !audioCtx) return;
+  if(djAudition && (session!==djAudition.session || session.performance.currentSection!==djAudition.section)){
+    stopPlayback(); setDjAuditionStatus("Section changed. Hear this bit again."); return;
+  }
   const tickNow = audioCtx.currentTime;
+  if(djAudition && tickNow >= djAudition.endAudioTime){
+    stopPlayback();
+    setDjAuditionStatus("Audition complete. Audio quality not checked.");
+    return;
+  }
   let lastDroppedStep = null;
   let processedSteps = 0;
   if(nextEventTime < tickNow - MAX_AUDIBLE_LATENESS_SECONDS) schedulerDiagnostics.missedTickCount++;
   while(nextEventTime < tickNow + LOOKAHEAD_SECONDS){
+    if(djAudition && state.currentStepForSchedule >= djAudition.end) break;
     if(pocketDjSchedulerCatchupDecision(processedSteps,MAX_SCHEDULER_CATCHUP_STEPS) === "reset"){
       schedulerDiagnostics.catchupResetCount++;
       nextEventTime = tickNow;
@@ -277,7 +286,8 @@ function schedulerTick(){
     else if(policy === "drop") { schedulerDiagnostics.droppedStepCount++; lastDroppedStep = step; }
     else break;
     nextEventTime += stepDuration(step);
-    advanceStepAfterScheduling(section, step);
+    if(djAudition) state.currentStepForSchedule = step + 1;
+    else advanceStepAfterScheduling(section, step);
     processedSteps++;
   }
   if(lastDroppedStep !== null){
@@ -366,34 +376,46 @@ function advanceStepAfterScheduling(section, step){
 }
 
 /* 7. Section launcher */
-async function startPlayback(){
+async function startPlayback(audition=null){
   if(!session) return showStatus("Load a project first.");
+  if(!audition && djAudition) stopPlayback();
   if(state.playing) pocketDjCampfireBank?.stopAll();
   const request = ++pocketDjPlaybackRequest;
   const activeSession = session;
   try{
     await ensureAudio();
     if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(audition && !djAuditionIsCurrent(audition)) return;
     if(!(await preparePocketDjCampfire(request,activeSession))) return;
     if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(audition && !djAuditionIsCurrent(audition)) return;
     callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume,.001 + audioCtx.currentTime,.018);
-  }catch(e){ showStatus(e.message || "Audio needs one tap to start on this device. Press Play again."); return; }
+  }catch(e){
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    const message=e.message || "Audio needs one tap to start on this device. Press Play again.";
+    if(audition && djAudition === audition){ djAudition=null; renderDjAudition(); setDjAuditionStatus(message); }
+    showStatus(message); return;
+  }
   clearScheduler();
   state.playing = true;
   state.currentSection = session.performance.currentSection;
-  if(session.performance.sequencePlaying) currentSequencePosition();
-  state.currentStepForSchedule = 0;
+  if(!audition && session.performance.sequencePlaying) currentSequencePosition();
+  state.currentStepForSchedule = audition?.start || 0;
   state.currentStep = -1;
   state.bar = 1;
   state.beat = 1;
   nextEventTime = audioCtx.currentTime + .04;
+  if(audition) audition.endAudioTime=nextEventTime + spanDuration(audition.start,audition.end-audition.start) + audition.tail;
   applyMixerAndFx();
   schedulerId = setInterval(schedulerTick, SCHEDULER_MS);
   schedulerTick();
   renderAll(); showStatus(`Playing section ${state.currentSection}${pocketDjCampfirePlan?.warnings.length ? ` · ${pocketDjCampfirePlan.warnings.join(" ")}` : ""}`);
+  if(audition) setDjAuditionStatus(`Playing ${audition.label}. Stop cancels.`);
 }
-function stopPlayback(){
+function stopPlayback(options={}){
+  const preservePerformance=!!djAudition || options?.preservePerformance === true;
+  djAudition=null;
   stopPocketDjCampfire();
   callPocketAudioCore("stop");
   state.playing = false;
@@ -402,7 +424,7 @@ function stopPlayback(){
   state.dropQueued = false;
   state.dropBoundaryScheduled = false;
   state.dropLanding = false;
-  if(session){
+  if(session && !preservePerformance){
     session.performance.buildActive = false;
     restoreBuildSnapshot();
     resetPerformanceStemScales(1);
@@ -413,7 +435,18 @@ function stopPlayback(){
   state.currentStep = -1;
   state.currentStepForSchedule = 0;
   applyMixerAndFx();
-  renderAll(); showStatus("Stopped");
+  if(preservePerformance){
+    releaseDjAuditionVoices();
+    if(masterGain && audioCtx){
+      const now=audioCtx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(masterGain.gain.value,now);
+      masterGain.gain.linearRampToValueAtTime(.0001,now+.01);
+    }
+    renderTransportState(); renderDjAudition();
+  }else renderAll();
+  showStatus("Stopped");
+  if(preservePerformance) setDjAuditionStatus("Stopped. Deck settings unchanged.");
 }
 function restartPlayback(){
   if(!session) return;

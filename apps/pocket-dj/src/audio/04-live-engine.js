@@ -204,6 +204,7 @@ function playOsc(stem,midi,t,dur,wave="sawtooth",peak=.2,filterType=null,filterF
 }
 function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,filterFreq=1500,pan=0){
   if(!audioCtx) return;
+  if(stem === "bass") dur=djAuditionDuration(t,dur);
   const params = activeSoundParameters();
   if(isChipDeck() && params.enabled !== false){
     const recipe = pocketDjPlaybackRecipeProbe(CHIP_AUDIO_PROFILE_ID,params);
@@ -222,7 +223,7 @@ function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,fil
   }
   connectWithPan(node, stemOutput(stem), pan, t);
   envGain(g,t,.01,.06,.7,.20,peak,dur);
-  osc.start(t); osc.stop(t + dur + .25);
+  startDjVoice(osc,t,t + dur + .25);
 }
 function playKick(t, peak=0.95){
   const kit = lofiDrumKit();
@@ -239,7 +240,7 @@ function playKick(t, peak=0.95){
   }
   g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
   g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
-  node.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+cfg.length); flashStem("drums");
+  node.connect(g); g.connect(stemOutput("drums")); startDjVoice(osc,t,t+cfg.length); flashStem("drums");
 }
 function playSnare(t, peak=0.5){
   const kit = lofiDrumKit();
@@ -255,14 +256,14 @@ function playSnare(t, peak=0.5){
   }
   g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
   g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
-  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+cfg.length);
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+cfg.length);
   if(cfg.bodyFreq){
     const body = audioCtx.createOscillator(), bodyGain = audioCtx.createGain();
     body.type = "triangle";
     body.frequency.setValueAtTime(cfg.bodyFreq,t);
     bodyGain.gain.setValueAtTime(cfg.bodyGain,t);
     bodyGain.gain.exponentialRampToValueAtTime(.001,t+cfg.bodyRampSeconds);
-    body.connect(bodyGain); bodyGain.connect(stemOutput("drums")); body.start(t); body.stop(t+cfg.bodyLength);
+    body.connect(bodyGain); bodyGain.connect(stemOutput("drums")); startDjVoice(body,t,t+cfg.bodyLength);
   }
   flashStem("drums");
 }
@@ -281,7 +282,7 @@ function playHat(t, peak=0.16, open=false){
   }
   g.gain.setValueAtTime(Math.max(open ? cfg.gainFloorOpen : cfg.gainFloorClosed, peak * (open ? cfg.gainScaleOpen : cfg.gainScaleClosed)),t);
   g.gain.exponentialRampToValueAtTime(.001,t + (open ? cfg.rampSecondsOpen : cfg.rampSecondsClosed));
-  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+hatLen); flashStem("drums");
 }
 function playFunkTransient(t, peak=.12, bright=false){
   if(!audioCtx) return;
@@ -290,7 +291,7 @@ function playFunkTransient(t, peak=.12, bright=false){
   src.buffer = liveNoiseBuffer(`funk_transient_${bright ? "bright" : "body"}_${Math.round(peak*100)}`,length,true);
   filter.type = bright ? "bandpass" : "lowpass"; filter.frequency.value = bright ? 2200 : 760; filter.Q.value = bright ? 1.1 : .7;
   gain.gain.setValueAtTime(.0001,t); gain.gain.linearRampToValueAtTime(Math.max(.0001,peak),t+.002); gain.gain.exponentialRampToValueAtTime(.0001,t+length);
-  src.connect(filter); filter.connect(gain); gain.connect(stemOutput("bass")); src.start(t); src.stop(t+length+.01);
+  src.connect(filter); filter.connect(gain); gain.connect(stemOutput("bass")); startDjVoice(src,t,t+length+.01);
 }
 function playBassExpressive(midi,t,dur=.22,peak=.34,articulation="finger",event={}){
   const art = String(articulation || "finger").toLowerCase();
@@ -331,14 +332,14 @@ function playLofiTexture(t, step=0){
     hp.type = "highpass"; hp.frequency.value = 520;
     lp.type = "lowpass"; lp.frequency.value = 3600 - age * 1800;
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.0055*hiss,t+.018); g.gain.exponentialRampToValueAtTime(.0001,t+.2);
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.22);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+.22);
   }
   if(crackle > .01 && featureSeed(step,43) < crackle * .7){
     const src = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
     src.buffer = liveNoiseBuffer(`lofi_crackle_${step % 19}`, .026, false);
     bp.type = "bandpass"; bp.frequency.value = 1550 + featureSeed(step,44) * 1300; bp.Q.value = .95;
     g.gain.setValueAtTime(.018*crackle,t); g.gain.exponentialRampToValueAtTime(.0001,t+.024);
-    src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.028);
+    src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+.028);
   }
 }
 function playCrash(t){ playHat(t,1.55,true); }
@@ -372,11 +373,13 @@ function playBass(midi,t,dur=.22,peak=.34,accent=false,toneOverride=null){
   flashStem("bass");
 }
 function playBassPhrase(midi,t,dur=.22,peak=.34,accent=false,slideMidi=null,slideOffset=null){
+  if(djAudition && slideOffset>=djAuditionDuration(t,Infinity))slideMidi=null;
   if(slideMidi === null || slideOffset === null){
     playBass(midi,t,dur,peak,accent);
     return;
   }
   const cfg = bassToneConfig();
+  dur=djAuditionDuration(t,dur);
   const endAt = t + Math.max(.08,dur) + .22;
   const slideAt = Math.max(t + .02, t + slideOffset);
   const makeVoice = (startMidi,targetMidi,wave,peakMul,cutoff) => {
@@ -387,7 +390,7 @@ function playBassPhrase(midi,t,dur=.22,peak=.34,accent=false,slideMidi=null,slid
     f.type = "lowpass"; f.frequency.setValueAtTime(cutoff, t);
     osc.connect(f); f.connect(g); g.connect(stemOutput("bass"));
     envGain(g,t,.01,.06,.7,.20,peak*peakMul*(accent ? 1.18 : 1),dur);
-    osc.start(t); osc.stop(endAt);
+    startDjVoice(osc,t,endAt);
   };
   makeVoice(midi,slideMidi,cfg.mainWave,cfg.mainPeak,accent ? cfg.cutoff * 1.18 : cfg.cutoff);
   makeVoice(midi-12,slideMidi-12,cfg.subWave,cfg.subPeak,cfg.subCutoff);
@@ -450,7 +453,7 @@ function playChordTone(freq,t,dur,type,peak,filterType,filterFreq,cfg={},pan=0){
     osc.detune.setValueAtTime(layer.detune ?? 0, t);
     layerGain.gain.setValueAtTime(layer.level ?? 1, t);
     osc.connect(layerGain); layerGain.connect(gain);
-    osc.start(t); osc.stop(stopAt);
+    startDjVoice(osc,t,stopAt);
   });
 }
 function chordInstrumentConfig(name){
@@ -577,7 +580,7 @@ function playGuitar(notes,t,dur,art="open",step=0){
     const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), bp = audioCtx.createBiquadFilter();
     src.buffer = liveNoiseBuffer(`guitar_scratch_${playDur}`, playDur, true); bp.type = "bandpass"; bp.frequency.value = 1450; bp.Q.value = .9;
     g.gain.setValueAtTime(.001,t); g.gain.linearRampToValueAtTime(.11,t+.004); g.gain.exponentialRampToValueAtTime(.001,t+playDur);
-    src.connect(bp); bp.connect(g); g.connect(bus); src.start(t); src.stop(t+playDur+.02); flashStem("guitar"); return;
+    src.connect(bp); bp.connect(g); g.connect(bus); startDjVoice(src,t,t+playDur+.02); flashStem("guitar"); return;
   }
   ordered.forEach((midi,i) => {
     const start = t + i * spread;
@@ -593,7 +596,7 @@ function playGuitar(notes,t,dur,art="open",step=0){
     g.gain.exponentialRampToValueAtTime(Math.max(.0001, peak*(isChug ? .10 : .52)), start + Math.max(.025, playDur*(isChug ? .45 : .35)));
     g.gain.exponentialRampToValueAtTime(.0001,start+playDur+(isChug ? .035 : .18));
     oscA.connect(g); oscB.connect(g); g.connect(bus);
-    oscA.start(start); oscB.start(start); oscA.stop(start+playDur+.22); oscB.stop(start+playDur+.22);
+    startDjVoice(oscA,start,start+playDur+.22); startDjVoice(oscB,start,start+playDur+.22);
   });
   flashStem("guitar");
 }

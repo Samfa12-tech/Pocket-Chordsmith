@@ -26,7 +26,7 @@
     "verify:single-file": "node scripts/build-single-file.mjs --check",
     "package:itch": "npm run build:single-file && node scripts/package-itch.mjs",
     "test:scheduler": "node --test tests/scheduler-policy.test.mjs",
-    "test:e2e": "playwright test --project=chromium-desktop",
+    "test:e2e": "playwright test --project=chromium-desktop --project=mobile-chrome",
     "test:cross-browser": "playwright test tests/core-smoke.spec.js --project=firefox-desktop --project=webkit-desktop --grep \"Pocket DJ exposes accessible|loads demo deck|deck controls queue\"",
     "lint": "eslint tests/**/*.mjs scripts/**/*.mjs",
     "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module NodeNext --moduleResolution NodeNext tests/scheduler-policy.test.mjs scripts/package-itch.mjs",

@@ -167,6 +167,19 @@
         </div>
         <div class="section">
           <div class="pad-grid" id="sectionPads"></div>
+          <div id="djAuditionControls" style="margin-top:14px;display:grid;gap:10px">
+            <div class="row"><button class="btn" id="hearDjBitBtn">Hear this bit</button><button class="btn" id="stopDjBitBtn" disabled>Stop audition</button></div>
+            <div class="small" id="djAuditionRange"></div>
+            <details><summary style="min-height:44px;padding:12px 0;cursor:pointer">Passage and listening cue</summary>
+              <div class="row">
+                <label class="small">Bar <select class="select" id="djAuditionBar" aria-label="Audition bar"></select></label>
+                <label class="small">Lead-in <select class="select" id="djAuditionLead"><option value="0">None</option><option value="1" selected>1 bar</option><option value="2">2 bars</option></select></label>
+                <label class="small">Tail <select class="select" id="djAuditionTail"><option value="0.5">0.5 s</option><option value="1" selected>1 s</option><option value="2">2 s</option></select></label>
+              </div>
+              <p class="small">Listen for bass and drums meeting the chord, and room for the melody. This is guidance, not an automatic finding. Adjust a stem or FX manually; use Play for held notes from earlier bars. Active builds and drops need ordinary Play.</p>
+            </details>
+            <div class="small" id="djAuditionStatus" role="status" aria-live="polite">Choose a bar in the current section. Nothing plays automatically.</div>
+          </div>
         </div>
         <div class="section sequence-panel">
           <div class="toolbar">

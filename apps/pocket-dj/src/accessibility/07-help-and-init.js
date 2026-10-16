@@ -18,6 +18,7 @@ function closeHelp(){
 
 /* 11. Event handlers */
 function bindHandlers(){
+  bindDjAudition();
   el.importBtn.addEventListener("click", handleImport);
   el.importText.addEventListener("input", () => setImportError());
   el.importHelpBtn?.addEventListener("click", openHelp);

@@ -9,9 +9,9 @@ No new product candidate has been published.
 | --- | --- | --- |
 | Reliability audit | Bounded cache, cancellation, playback, timing, mixer and UI fixes in reviewed slices | Representative long-session and peak working-set budgets; unmeasured audit entries remain hypotheses |
 | Campfire family | Original shared recipe and family selectors; full voicings, deterministic seed/rate/gain/tail/cache identity and legacy-source tests | Human listening and live/vocal acceptance; retain documented live fallback limits |
-| Chordsmith | Approved themes retain Night blue default and saved choices; selected-bar Hear/Stop, visible lead-in/tail, optional manual cue and stale-preparation guards | PR109 original head is held for bass release; follow-up candidate review; broader proposal A/B, optional playable examples and final physical-phone acceptance |
-| Chordsmith bass correction | Old-head range/Stop failures reproduced; owned bass release, future-source cancellation, finite duration and slide bounds implemented | Exact follow-up hosted/source review; no physical listening claim |
-| DJ | Existing shared prepared Campfire/runtime and browser tests retained | Contextual audition WIP safely stashed at 73895c272a40f03b5869db593594c817e0f193af; correct fixture and complete validation, feedback and comparison follow-through |
+| Chordsmith | Approved themes retain Night blue default and saved choices; selected-bar Hear/Stop, visible lead-in/tail, optional manual cue and stale-preparation guards | PR110 bass follow-up is source accepted with exact hosted gates; broader proposal A/B, optional playable examples and final physical-phone acceptance |
+| Chordsmith bass correction | Old-head range/Stop failures reproduced; owned bass release, future-source cancellation, finite duration and slide bounds implemented | PR110 source accepted and exact hosted gates pass; no physical listening claim |
+| DJ | Existing shared prepared Campfire/runtime and browser tests retained | Contextual audition source candidate passes80 desktop/phone, final30 contextual, six Firefox/WebKit and six scheduler checks; packaging/review and comparison follow-through remain |
 | DAW Hear/Finish | PR101/103/104/105 source accepted; native monitor, final downloaded-WAV QC and hydration ownership implemented | Exact final installed/native/device/listening acceptance |
 | Passive DAW readiness | PR107 Godot correction and PR108 updater delta independently accepted; Export/File DOM/focus survive delayed discovery and automatic updater results | Dense installed WebView/Windows scaling acceptance |
 | Meter/delivery | PR100 external calibration and PR103 native monitor/seven WAV references; PR105 final Blob QC source accepted | Exact installed decoded outputs; internal QC is not general WAV-file certification |
@@ -36,7 +36,7 @@ PCM checks. These prove nonzero generated bass becomes silent after Stop/end on
 that browser bus. They do not prove a speaker route or human listening.
 Lint, limited authored-module typecheck, four unit checks, deterministic bundle,
 production Vite build and existing size budgets pass: HTML1,073,920/1,100,000;
-modules899,951/900,000. Exact follow-up hosted/source review is pending.
+modules899,951/900,000. PR110 follow-up is independently source accepted; exact CI38832462861 and CodeQL38832462897 succeeded.
 
 PR106's nominally green Godot run was invalid because it printed a script error.
 PR107's corrected hosted lifecycle checks are clean:22 checks, no script errors

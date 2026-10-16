@@ -77,7 +77,7 @@ function stopPocketDjCampfire(){
 }
 
 function adoptPocketDjSession(nextSession){
-  if(state.playing) stopPlayback();
+  if(state.playing || djAudition) stopPlayback();
   else stopPocketDjCampfire();
   pocketDjCampfireBank?.dispose();
   pocketDjCampfireBank = null;

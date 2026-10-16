@@ -1555,3 +1555,34 @@ CI38830488145 and CodeQL38830488197 succeeded, but its source hold remains until
 the bass follow-up review. PR108 is independently accepted with exact terminal
 CI/CodeQL success. Final source size899951/900000 and HTML1073920/1100000 pass;
 no budget increase. Source-only correction ready for a separate draft PR.
+
+## DJ selected-passage audition candidate
+
+Contextual Hear/Stop, explicit current section/bar/actual whole-bar lead-in/tail
+and optional manual guidance now reuse the existing DJ scheduler and prepared
+Campfire bank. No autoplay or saved-source change. Finite playback does not wrap,
+launch queued sections or advance the sequence. Audition Stop preserves FX,
+volumes, queue/sequence/hold settings and saves. Active builds/drops/fills give an
+actionable ordinary-Play fallback. Existing transport Stop/Pause own cancellation
+once; generic pre-edit cancellation retains the actual mixer input and focus.
+Owned transient sources cancel future starts; bass duration/slide bounds and
+short preview master fade prevent held bass leaking into later previews.
+
+Full desktop/phone existing+new run:80/80 passed, including26 contextual cases
+and four nonzero-to-silent generated bass-bus PCM cases. Final transport-button
+routing correction passes all30 contextual cases, including four new normal
+Stop/Pause checks. Six Firefox/WebKit existing smoke cases and scheduler6 pass.
+Lint, limited tooling typecheck, format, explicit JS syntax, deterministic9fragment,
+size/repo/security/governance/whitespace pass. Final active HTML232369/300000.
+Phone320px screenshot inspected and retained under the candidate artifact folder.
+First interrupted run had ambiguous Playwright option-label/value selection,
+not a product bar-clamping defect; those failures are retained, not counted passed.
+Source UI/runtime only; no physical speaker/listening/native installer publication.
+Broader proposal A/B and Godot editor workflow remain independent follow-through.
+See apps/pocket-dj/docs/CONTEXTUAL_AUDITION_2026-10-16.md.
+
+PR110 held-bass delta is independently source accepted at
+83764634bef0d675e95179e4539015a68b75e3a8; exact CI38832462861 and CodeQL38832462897
+are now terminal success. Scoped Chordsmith jobs ran; unrelated components were
+intentionally skipped. This clears the reported PR109 source hold through the
+follow-up; the original head remains preserved.

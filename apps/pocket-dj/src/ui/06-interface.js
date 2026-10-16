@@ -13,7 +13,7 @@ function showStatus(msg){
   if(el.importStatus) el.importStatus.textContent = msg;
   if(el.toast){ el.toast.textContent = msg; el.toast.classList.add("show"); clearTimeout(el.toast._timer); el.toast._timer = setTimeout(() => el.toast.classList.remove("show"), 1800); }
 }
-function renderAll(){ renderShell(); renderMeta(); renderTransportState(); renderPads(); renderSequence(); renderMixer(); renderFx(); updateButtons(); }
+function renderAll(){ renderShell(); renderMeta(); renderTransportState(); renderPads(); renderSequence(); renderMixer(); renderFx(); updateButtons(); renderDjAudition(); }
 function renderShell(){
   applyImportedTheme(session?.deck?.theme || "night");
   const hasSession = !!session;
@@ -72,6 +72,7 @@ function renderTransportState(){
   el.beatDots.innerHTML = Array.from({length:session.deck.timeSig},(_,i)=>`<div class="beat-dot ${state.currentStep >= 0 && i+1 === state.beat ? "on" : ""}"></div>`).join("");
   el.playBtn.textContent = state.playing ? "Pause" : "Play";
   el.loopBtn.textContent = session.performance.loopCurrentSection ? "Release Hold" : "Hold Section";
+  renderDjAudition();
 }
 function renderPads(){
   if(!session) return;
