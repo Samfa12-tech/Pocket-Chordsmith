@@ -2,7 +2,7 @@
 
 > Generated from `apps/pocket-daw/test-scope-manifest.json` by `node scripts/verify-test-scope-manifest.mjs --write-matrix`. Do not hand-edit this file.
 
-Current inventory: 112 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
+Current inventory: 113 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
 
 ## Category totals
 
@@ -14,7 +14,7 @@ Current inventory: 112 runnable test artifacts. The categories below identify th
 | native-rust | 2 |
 | release-contract | 15 |
 | unit-domain | 34 |
-| windows-contract | 15 |
+| windows-contract | 16 |
 
 ## Inventory
 
@@ -132,3 +132,4 @@ Current inventory: 112 runnable test artifacts. The categories below identify th
 | `apps/pocket-daw/src/daw/exportProfiles.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated export-profile domain behavior. |
 | `apps/pocket-daw/src/daw/timeline.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated timeline domain behavior. |
 | `apps/pocket-daw/src/plugins/vst3Foundation.test.ts` | windows-contract | windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated VST3 foundation contract. |
+| `apps/pocket-daw/tests/projectFileOpen.test.ts` | windows-contract | windows | yes | yes | yes | yes | none (validator/fixture only) | Native picker cancellation, unavailable fallback, duplicate requests and stale project result protection. |

@@ -979,15 +979,27 @@ struct MidiFilePayload {
 }
 
 #[tauri::command]
-fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
-    let file = rfd::FileDialog::new()
-        .add_filter("Pocket DAW project", &["pocketdaw", "json"])
-        .add_filter("JSON", &["json"])
-        .pick_file();
-    let Some(path) = file else {
-        return Ok(None);
-    };
-    read_project_file_payload(path).map(Some)
+async fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
+    open_project_file_with_picker(|| {
+        rfd::FileDialog::new()
+            .add_filter("Pocket DAW project", &["pocketdaw", "json"])
+            .add_filter("JSON", &["json"])
+            .pick_file()
+    })
+    .await
+}
+
+async fn open_project_file_with_picker<F>(picker: F) -> Result<Option<ProjectFilePayload>, String>
+where
+    F: FnOnce() -> Option<std::path::PathBuf> + Send + 'static,
+{
+    // A synchronous Tauri command runs on the main thread. Keep the dialog and
+    // bounded file read off that thread so transport/Stop/status still dispatch.
+    tauri::async_runtime::spawn_blocking(move || {
+        picker().map(read_project_file_payload).transpose()
+    })
+    .await
+    .map_err(|err| format!("Project file picker failed: {}", err))?
 }
 
 #[tauri::command]
@@ -2114,6 +2126,71 @@ fn bytes_to_mb(bytes: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn held_project_picker(
+        path: Option<std::path::PathBuf>,
+    ) -> Result<Option<ProjectFilePayload>, String> {
+        use std::future::Future;
+        use std::sync::mpsc;
+        use std::task::{Context, Poll, Waker};
+        use std::time::Duration;
+        let caller = std::thread::current().id();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut request = Box::pin(open_project_file_with_picker(move || {
+            started_tx.send(std::thread::current().id()).unwrap();
+            release_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("bounded picker release");
+            path
+        }));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(
+            matches!(request.as_mut().poll(&mut context), Poll::Pending),
+            "held picker must yield to dispatch"
+        );
+        let worker = started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("picker worker started");
+        assert_ne!(
+            caller, worker,
+            "dialog must not execute on command caller thread"
+        );
+        assert_eq!(tauri::async_runtime::block_on(async { 7 }), 7);
+        release_tx.send(()).unwrap();
+        tauri::async_runtime::block_on(request)
+    }
+
+    #[test]
+    fn project_picker_yields_until_cancelled_without_opening_a_file() {
+        assert!(held_project_picker(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn project_picker_returns_selected_contents_and_preserves_read_errors() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("pocket-daw-picker-{stamp}.json"));
+        std::fs::write(&path, "{\"app\":\"PocketChordsmith\"}").unwrap();
+        let payload = held_project_picker(Some(path.clone())).unwrap().unwrap();
+        assert_eq!(payload.path, path.to_string_lossy());
+        assert_eq!(payload.contents, "{\"app\":\"PocketChordsmith\"}");
+        std::fs::remove_file(&path).unwrap();
+        assert!(held_project_picker(Some(path))
+            .err()
+            .unwrap()
+            .contains("Could not inspect file size"));
+    }
+
+    #[test]
+    fn project_picker_worker_failure_is_reported() {
+        let result = tauri::async_runtime::block_on(open_project_file_with_picker(|| {
+            panic!("picker failure control")
+        }));
+        assert!(result.err().unwrap().contains("Project file picker failed"));
+    }
 
     #[test]
     fn native_cache_paths_stay_under_project_cache() {

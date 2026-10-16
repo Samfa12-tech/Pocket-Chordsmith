@@ -94,16 +94,24 @@ export function projectTitleFromFileState(file: ProjectFileState | null | undefi
   return withoutExtension || label;
 }
 
-export async function openProjectFileNative(api = defaultNativeFileApi): Promise<OpenProjectFileResult | null> {
-  if (!api.isAvailable()) return null;
+export type NativeProjectOpenResult =
+  | { mode: "selected"; project: OpenProjectFileResult }
+  | { mode: "cancelled" }
+  | { mode: "unavailable" };
+
+export async function openProjectFileNative(api = defaultNativeFileApi): Promise<NativeProjectOpenResult> {
+  if (!api.isAvailable()) return { mode: "unavailable" };
   const result = await api.invoke<NativeOpenPayload | null>("open_project_file");
-  if (!result) return null;
+  if (!result) return { mode: "cancelled" };
   assertNativeOpenPayload(result);
   return {
-    contents: result.contents,
-    file: {
-      path: result.path,
-      label: result.label || projectFileStateFromPath(result.path).label
+    mode: "selected",
+    project: {
+      contents: result.contents,
+      file: {
+        path: result.path,
+        label: result.label || projectFileStateFromPath(result.path).label
+      }
     }
   };
 }

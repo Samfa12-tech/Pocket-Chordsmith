@@ -1,3 +1,4 @@
+import { ProjectFileOpen, projectFileUsesFamilyImport, projectOpenRecordingBusy } from "./projectFileOpen";
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, clearAudioBufferCache, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings } from "../audio/metronome";
@@ -455,6 +456,7 @@ export class App {
   private desktopMenus: DesktopMenus;
   private engine: AudioEngine;
   private fileInput: HTMLInputElement;
+  private readonly projectFileOpen = new ProjectFileOpen();
   private audioFileInput: HTMLInputElement;
   private midiFileInput: HTMLInputElement;
   private renderCount = 0;
@@ -6592,23 +6594,39 @@ export class App {
   }
 
   private async openProject() {
-    try {
-      const native = await openProjectFileNative();
-      if (native) {
-        await this.openNativeProjectWithRecovery(native);
-        return;
-      }
-    } catch (error) {
-      this.state.status = error instanceof Error ? `Native open failed: ${error.message}` : "Native open failed. Choose a file in the browser picker.";
+    const recordingBusy = () => projectOpenRecordingBusy(this.state.recording.status, this.state.midiInputRecording.status);
+    if (recordingBusy()) {
+      this.state.status = "Stop recording before opening another project.";
       this.render();
+      return;
     }
-    this.fileInput.click();
+    const project = currentProject(this.state);
+    const file = this.state.currentFile;
+    const recordingToken = this.recordingStartToken;
+    await this.projectFileOpen.open({
+      select: () => openProjectFileNative(),
+      isCurrent: () => currentProject(this.state) === project && this.state.currentFile === file && this.recordingStartToken === recordingToken && !recordingBusy(),
+      openNative: (native, isCurrent) => this.openNativeProjectWithRecovery(native, undefined, true, isCurrent),
+      openBrowser: () => this.fileInput.click(),
+      report: (message) => { this.state.status = message; this.render(); }
+    });
   }
 
-  private async openNativeProjectWithRecovery(native: OpenProjectFileResult, status?: string, promptRecovery = true) {
+  private async openNativeProjectWithRecovery(native: OpenProjectFileResult, status?: string, promptRecovery = true, isCurrent = () => true) {
+    // Native and browser JSON selections share the existing family importer.
+    // Only Pocket DAW documents adopt a native save path/recovery candidate.
+    if (projectFileUsesFamilyImport(native)) {
+      if (isCurrent()) {
+        this.state.importText = native.contents;
+        this.importText(native.contents);
+      }
+      return;
+    }
     const recovery = promptRecovery ? await this.recoveryCandidateForOpen(native.file.path) : null;
+    if (!isCurrent()) return;
     if (recovery) {
       const recovered = await readProjectFileNative(recovery.path);
+      if (!isCurrent()) return;
       if (recovered) {
         await this.openRawProjectText(recovered.contents, recovered.file.label, recovered.file.path, {
           status: `Recovered ${recovered.file.label} before opening ${native.file.label}.`

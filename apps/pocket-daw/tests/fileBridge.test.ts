@@ -92,7 +92,7 @@ describe("native file bridge", () => {
     await expect(writeProjectFileNativeStrict(createDemoProject(), "C:\\Songs\\Portable.pocketdaw", api)).rejects.toThrow("installed native app");
   });
 
-  it("opens native project payloads and treats cancel as null", async () => {
+  it("opens native project payloads and distinguishes cancel from unavailable", async () => {
     const api: NativeFileApi = {
       isAvailable: () => true,
       async invoke() {
@@ -106,10 +106,14 @@ describe("native file bridge", () => {
       }
     };
 
-    await expect(openProjectFileNative(cancelled)).resolves.toBeNull();
+    await expect(openProjectFileNative(cancelled)).resolves.toEqual({ mode: "cancelled" });
+    await expect(openProjectFileNative({ isAvailable: () => false, invoke: vi.fn() })).resolves.toEqual({ mode: "unavailable" });
     await expect(openProjectFileNative(api)).resolves.toMatchObject({
-      contents: "{\"ok\":true}",
-      file: { path: "C:\\Songs\\Opened.pocketdaw", label: "Opened.pocketdaw" }
+      mode: "selected",
+      project: {
+        contents: "{\"ok\":true}",
+        file: { path: "C:\\Songs\\Opened.pocketdaw", label: "Opened.pocketdaw" }
+      }
     });
   });
 

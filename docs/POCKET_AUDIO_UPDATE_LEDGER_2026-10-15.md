@@ -1731,3 +1731,15 @@ See runtime acceptance and docs/FAMILY_RELEASE_CANDIDATES_2026-10-16.md for exac
 scope, candidate/public truth and remaining gates. No public upload or exact
 installed candidate pass is claimed by these source checks. Website work must
 preserve b2469ac41f721074868b89d1fbab9ccfea56e34f from fresh website main.
+
+### Native project picker follow-up (source candidate, 2026-10-16)
+
+Sam confirmed paste import and DAW guitar audibility after closing the still-open
+native picker. Native file selection remains unpassed. The isolated follow-up
+makes project Open asynchronous, separates Cancel from unavailable fallback,
+rejects duplicate/stale results and protects active/new recording. Native family
+JSON uses the existing importer while DAW projects retain native recovery.
+See apps/pocket-daw/docs/NATIVE_PROJECT_PICKER_FIX_2026-10-16.md. No frozen0.6.51
+artifact changed, no new installer or publication. Exact updated Windows picker
+acceptance is pending. Capture fingerprint unchanged; fresh hands-on mic is a
+scoped omission, not passed; future exact-install PCM/MIDI/export remains required.
