@@ -141,3 +141,38 @@ is not rendered game, peak process-memory, device-output or listening acceptance
 The frozen DAW installer and held addon release artifacts are unchanged.
 
 A final-source headless Godot 4.6.3/Dummy 48 kHz AudioServer capture also passes both native full-mix routes: all 216,000 reference frames (2.0-6.5 seconds), maximum error 1.6465783e-6, RMS error 2.9295904e-7, zero capture-buffer drops, and rejected silence controls. This is runtime PCM evidence, not a rendered/device/listening pass for this follow-up. The corrected full source gate passes 104 prepared-worker checks, 157 owned-lifecycle checks, 23 async/82 audition checks, shutdown completion markers, clock/origin/mix contracts and 152-entry addon packaging. Both unchanged global result and scoped shutdown validator suites pass 12 Node tests.
+
+## Compatibility and measurement follow-up
+
+The earlier max_asset_load_us figure measures submission/preflight and resumed
+preparation only. In particular1.447ms excludes completed-reader drain and signal
+emission before coroutine resumption. It is not all main-thread work or a whole
+frame. Separate measurement-only copies add a completed-job envelope after the
+worker-ready check through drain, signal/resumed consumer until yield, and finish/
+queue-free scheduling. One baseline/candidate pair measured26.972/0.594ms envelopes
+and29.113/1.826ms preparation subphases; overlapping values must not be added.
+Polling, other frame work and deferred destruction remain outside that envelope.
+That candidate run also FAILED baseline52.807ms and game/SFX49.605ms frame bounds.
+These join the earlier43.602ms failure; no broad frame acceptance is asserted.
+
+An advertised4.4 compatibility check found FileAccess.get_size unavailable in
+Godot4.4.1, preventing import compilation. Three bounded size queries now open a
+read handle, get its length and close it before reading/parsing/extracting. Open
+failure remains negative/fail-closed; all source/manifest/archive byte limits and
+trust rules are unchanged. Extra cases cover oversized source/manifest input and
+an unopenable archive. No dependency, licence or permission changes are involved.
+
+The complete4.6.3 source gate passed104worker/157lifecycle/23async/82audition,
+shutdown/clock/origin/mix contracts and152-entry packaging with these changes.
+Fresh focused imports and added size-boundary cases pass on4.4.1 and4.6.3.
+Runtime compatibility remains separate: a full4.4.1 Dummy gate failed the loop
+phase check(sync=false,error0.159291665s). A later focused48k Dummy control passed
+4.4.1 but failed4.6.3(sync=true,error0.943666689s). Neither failure is discarded.
+
+One serial headless WASAPI48k control per engine, with only that generated test
+project's Master bus muted, passes the unchanged loop predicates on both4.4.1 and
+4.6.3. Each run reports the expected driver/rate/mute state. No DAW or Windows
+mixer settings changed. These position/clock controls do not establish physical
+PCM parity, audible output, human listening, rendered game performance or broad
+compatibility. The inconsistent Dummy controls remain an open validation limit;
+no minimum-version listing or public artifact is changed by this source slice.

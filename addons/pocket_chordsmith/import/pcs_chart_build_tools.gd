@@ -27,7 +27,10 @@ func compile_file(source_path: String, output_path := "", options := {}) -> Dict
 	if not FileAccess.file_exists(source_path):
 		result["errors"].append("Source file does not exist: %s" % source_path)
 		return result
-	var source_size := FileAccess.get_size(source_path)
+	var source_file := FileAccess.open(source_path, FileAccess.READ)
+	var source_size: int = source_file.get_length() if source_file != null else -1
+	if source_file != null:
+		source_file.close()
 	if source_size < 0 or source_size > MAX_SOURCE_TEXT_BYTES:
 		result["errors"].append("Source file exceeds the %d-byte import limit: %s" % [MAX_SOURCE_TEXT_BYTES, source_path])
 		return result
@@ -575,7 +578,10 @@ func _extract_game_pack_zip(zip_path: String, destination_root: String, options:
 		"errors": [],
 	}
 	var reader := ZIPReader.new()
-	var archive_size := FileAccess.get_size(zip_path)
+	var archive_file := FileAccess.open(zip_path, FileAccess.READ)
+	var archive_size: int = archive_file.get_length() if archive_file != null else -1
+	if archive_file != null:
+		archive_file.close()
 	if archive_size < 0 or archive_size > MAX_ZIP_BYTES:
 		result["errors"].append("DAW pack ZIP exceeds the %d-byte archive limit." % MAX_ZIP_BYTES)
 		return result

@@ -1785,3 +1785,15 @@ validation, not a replacement frozen release candidate or publication approval.
 See OWNED_RESOURCE_LOADING_2026-10-16.md for protocol, results and remaining limits.
 
 A final-source headless Godot 4.6.3/Dummy 48 kHz AudioServer capture also passes both native full-mix routes: all 216,000 reference frames (2.0-6.5 seconds), maximum error 1.6465783e-6, RMS error 2.9295904e-7, zero capture-buffer drops, and rejected silence controls. This is runtime PCM evidence, not a rendered/device/listening pass for this follow-up. The corrected full source gate passes 104 prepared-worker checks, 157 owned-lifecycle checks, 23 async/82 audition checks, shutdown completion markers, clock/origin/mix contracts and 152-entry addon packaging. Both unchanged global result and scoped shutdown validator suites pass 12 Node tests.
+
+### Godot file-length compatibility source follow-up
+
+Advertised4.4 check reproduced a compile failure: three FileAccess.get_size calls
+are absent in4.4.1. Replace only those bounded queries with read-handle length/
+close; limits/trust behavior unchanged. New size controls and focused import pass
+on4.4.1/4.6.3; earlier full4.6.3 gate152 passes. Runtime acceptance remains OPEN:
+full4.4.1 Dummy loop failure0.159291665s and later focused4.6.3 Dummy failure
+0.943666689s retained. Explicitly muted headless WASAPI48k loop controls pass once
+per engine, position-only proof. No full-version/rendered/device-PCM/listening
+claim, minimum-version metadata change or publication. Separate completion-dispatch
+measurement retains new52.807/49.605ms frame failures and earlier43.602ms failure.

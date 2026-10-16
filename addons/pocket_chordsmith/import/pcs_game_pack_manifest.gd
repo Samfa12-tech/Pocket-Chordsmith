@@ -26,7 +26,10 @@ static func load_manifest_file(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		result["errors"].append("Manifest file does not exist: %s" % path)
 		return result
-	var manifest_size := FileAccess.get_size(path)
+	var manifest_file := FileAccess.open(path, FileAccess.READ)
+	var manifest_size: int = manifest_file.get_length() if manifest_file != null else -1
+	if manifest_file != null:
+		manifest_file.close()
 	if manifest_size < 0 or manifest_size > MAX_MANIFEST_BYTES:
 		result["errors"].append("Game-pack manifest exceeds the %d-byte limit: %s" % [MAX_MANIFEST_BYTES, path])
 		return result
