@@ -862,6 +862,7 @@ function initStateArrays(){
     state[sectionPropKey("bassArticulation", id)] = ensureBassArticulationTrack([]);
     state[sectionPropKey("drumLanes", id)] = createDrumLanes();
     state[sectionPropKey("guitarPattern", id)] = createGuitarState();
+    state[sectionPropKey("guitarPerformance", id)] = "grid";
     state[sectionPropKey("progression", id)] = new Array(4).fill(null);
   });
   syncSection();

@@ -27,6 +27,11 @@ commit and installed artifact rather than imply this planning work was shipped.
 
 ## Audit follow-through: 2026-10-12
 
+Current source-candidate progress is tracked in the
+[15 October implementation ledger](../../../docs/POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md).
+The table below preserves the planning baseline; source checks, installed
+acceptance and publication remain separate in that ledger.
+
 The [full dated audit](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md) preserves 13 source-reviewed findings,
 commit-pinned evidence, existing mitigations, proposed fixes, regression risks
 and validation plans at source `0c6975cadcd4aba0047ab94170a2adabc722517f`.
@@ -75,6 +80,18 @@ Session checklist:
   original audit as historical evidence rather than silently rewriting it.
 - [ ] Keep test/fix completion separate from release/publication status. Follow
   the existing receipt-bound release process only when a release is intended.
+
+## Next-update instrument slice: Campfire Acoustic
+
+The [canonical Campfire Acoustic plan](../../../docs/CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md)
+records the requested Towtal Chaos guitar addition across Core, Chordsmith, DJ,
+native DAW and Godot. It is planned, with implementation and acceptance pending.
+Keep the audit ledger and P0/P1 order intact; resolve blocking cache/timing issues
+before adding the sound. DAW acceptance includes native live/offline rendering,
+versioned cache invalidation, full voicing/strum/picking intent, installed listening
+evidence and exports that agree with the reference. Godot uses prepared stems for
+production parity, with optional native preview work separately gated.
+This documentation does not start a build or alter release status.
 
 ## P0: Find and remove preparation hitches
 
@@ -196,6 +213,21 @@ Acceptance:
 - [ ] Present export scope, destination, progress, cancellation, warnings and a
   concise result summary clearly; unsupported settings fail visibly rather
   than silently changing the sound or output format.
+
+### Selection-scoped preview and feedback refinement
+
+Apply the [cross-family hear/compare/keep interaction](../../../docs/public-roadmap.md#next-update-workflow-refinements-hear-compare-keep)
+to selected loops and edits after the P0/P1 work. Extend the existing
+[MIDI transcription/arrangement preview and one-command undo](MIDI_IMPORT_AND_CHORDSMITH_CONVERSION_PLAN.md#implemented-source-checkpoint--2026-07-14);
+do not replace it or describe preview/undo as missing.
+
+- [ ] Audition original/proposed versions at the same musical position using the
+  native sample clock and the loudness-matching contract above. Keep comparison
+  gain monitor-only; expose unavailable/uncalibrated comparisons honestly.
+- [ ] Pair evidence-based feedback with an optional short listen-for A/B and a
+  reversible action or manual override. Apply is one undoable edit; Discard leaves
+  the source untouched. Verify Stop/Cancel, stale preview rejection, selection
+  retention and bounded preparation without new cache churn or playback gaps.
 
 ## Cross-cutting reliability gates, not new feature claims
 

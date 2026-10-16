@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const html = readFileSync(
-  new URL("../pocket_dj_v1g_core_bridge.html", import.meta.url),
+  new URL("../pocket_dj_v1i_core_bridge.html", import.meta.url),
   "utf8",
 );
 const source = html.match(

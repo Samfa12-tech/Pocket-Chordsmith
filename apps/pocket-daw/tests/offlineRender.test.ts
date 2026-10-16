@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { chordsmithOfflineLofiTextureForProject, chordsmithOfflineTrackExportGain, downmixPcm16WavToMono, encodeWav, fullSongWavBitDepth, fullSongWavChannelMode, fullSongWavPeakNormalize, fullSongWavSampleRate, peakNormalizePcm16Wav, renderProjectToWavBlob } from "../src/audio/offlineRender";
+import { chordsmithOfflineLofiTextureForProject, chordsmithOfflineTrackExportGain, downmixPcm16WavToMono, encodeWav, fullSongWavBitDepth, fullSongWavChannelMode, fullSongWavPeakNormalize, fullSongWavSampleRate, peakNormalizePcm16Wav, renderProjectToWavBlob, wavBlobWithChannelMode } from "../src/audio/offlineRender";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { createAutomationLane } from "../src/daw/automation";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
@@ -12,6 +12,20 @@ afterEach(() => {
 });
 
 describe("offline WAV render parity helpers", () => {
+  it("honours explicit PCM16 conversion from a native float32 blob without dither or normalization", async () => {
+    const source = encodeWav(fakeAudioBuffer([[0.125, -0.25], [0.5, -0.75]]), { bitDepth: 32 });
+    const converted = await wavBlobWithChannelMode(source, "stereo", { bitDepth: 16, dither: "off", normalizePeak: false });
+    const view = new DataView(await converted.arrayBuffer());
+    expect(view.getUint16(20, true)).toBe(1);
+    expect(view.getUint16(34, true)).toBe(16);
+    expect(view.getInt16(44, true)).toBe(4096);
+    expect(view.getInt16(46, true)).toBe(16384);
+  });
+  it("keeps canonical native PCM16 passthrough without reading or copying its full PCM", async () => {
+    const source = encodeWav(fakeAudioBuffer([[0.125, -0.25], [0.5, -0.75]]), { bitDepth: 16 });
+    source.arrayBuffer = async () => { throw new Error("The whole native PCM16 blob must not be read for passthrough."); };
+    expect(await wavBlobWithChannelMode(source, "stereo", { bitDepth: 16, dither: "off", normalizePeak: false })).toBe(source);
+  });
   it("extracts Chordsmith lofi texture settings for continuous export texture", () => {
     const texture = chordsmithOfflineLofiTextureForProject(createLofiTemplateProject());
 

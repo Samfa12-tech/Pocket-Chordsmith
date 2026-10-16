@@ -309,9 +309,10 @@ const MIDI_IMPORT_MAX_EVENTS = 65536;
 const PROJECT_SCHEMA_VERSION = 17;
 const LEGACY_PROJECT_SCHEMA_VERSION = 16;
 const FORMAT_FEATURES = ["sound-profile-v1","rich-events-v1","articulations-v1","expanded-drums-v1","capability-report-v1"];
-const POCKET_AUDIO_CORE_VERSION = "0.2.0";
+const POCKET_AUDIO_CORE_VERSION = "0.3.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17";
 const POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64 = "__POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64__";
+const POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64 = "__POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64__";
 const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
   "./pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
   "./pocket-audio-core/src/browser.js",
@@ -478,6 +479,7 @@ const SECTION_PROP_GROUPS = [
   "bassArticulation",
   "drumLanes",
   "guitarPattern",
+  "guitarPerformance",
   "progression"
 ];
 
@@ -654,7 +656,7 @@ function funkDrumKitIds(){ return FUNK_DRUM_KITS.slice(); }
 function funkBassToneIds(){ return FUNK_BASS_TONES.slice(); }
 function pocketDrumKitIds(){ return Array.from(new Set(["classic", ...lofiDrumKitIds(), ...chipDrumKitIds(), ...metalDrumKitIds(),...funkDrumKitIds()])); }
 function pocketBassToneIds(){ return Array.from(new Set(["classic", ...lofiBassToneIds(), ...chipBassToneIds(), ...metalBassToneIds(),...funkBassToneIds()])); }
-function guitarToneIds(){ return coreArrayExport("POCKET_GUITAR_TONES", GUITAR_TONES); }
+function guitarToneIds(){ return [...coreArrayExport("POCKET_GUITAR_TONES", GUITAR_TONES), "campfire_acoustic"]; }
 function guitarRegisterIds(){ return coreArrayExport("POCKET_GUITAR_REGISTERS", GUITAR_REGISTERS); }
 function guitarStrumModeIds(){ return coreArrayExport("POCKET_GUITAR_STRUM_MODES", GUITAR_STRUM_MODES); }
 function guitarPatternPresetIds(){ return coreArrayExport("POCKET_GUITAR_PATTERN_PRESETS", GUITAR_PATTERN_PRESETS); }
@@ -667,6 +669,7 @@ let audioCtx, masterGain, chordGain, beatGain, leadGain, guitarGain, metroGain, 
 const schedulerTimers = new Set();
 const activeChordVoices = [];
 const activeLeadVoices = [];
+const activeBassVoices = [];
 const activeGuitarVoices = [];
 const liveNoiseBuffers = new Map();
 let settingsFocusReturn = null;
@@ -708,6 +711,7 @@ function getSectionData(sectionId, includeMelody=state.uiMode === "advanced"){
     grid: state[sectionPropKey("grid", id)],
     gridTuplets: state[sectionPropKey("gridTuplets", id)] || blankGridTuplets(),
     guitarPattern: state[sectionPropKey("guitarPattern", id)] || createGuitarState(),
+    guitarPerformance: state[sectionPropKey("guitarPerformance", id)] || "grid",
     melodyTracks: includeMelody ? state[sectionPropKey("melodyTracks", id)] : [],
     melodyInstruments: includeMelody ? state[sectionPropKey("melodyInstruments", id)] : [],
     melodyOctaves: includeMelody ? state[sectionPropKey("melodyOctaves", id)] : [],
@@ -1102,13 +1106,14 @@ function sanitizeRichEvent(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const out = deepCloneProjectValue(raw) || {};
   if(raw.step !== undefined) out.step = Math.max(0, asNumber(raw.step,0));
-  if(raw.tick !== undefined) out.tick = Math.max(0, asInt(raw.tick,0));
+  const campfire = (raw.sound || raw.instrument) === "campfire_acoustic";
+  if(raw.tick !== undefined) out.tick = Math.max(0, campfire ? asNumber(raw.tick,0) : asInt(raw.tick,0));
   out.duration = Math.max(0.001,asNumber(raw.duration,1));
   if(raw.note !== undefined) out.note = asNumber(raw.note,0);
   if(Array.isArray(raw.notes)) out.notes = raw.notes.map(note => asNumber(note,0));
-  out.velocity = clamp(asInt(raw.velocity,96),1,127);
+  out.velocity = campfire ? clamp(asNumber(raw.velocity,100),0,127) : clamp(asInt(raw.velocity,96),1,127);
   out.articulation = String(raw.articulation || "finger");
-  out.sound = String(raw.sound || "standard");
+  out.sound = String(raw.sound || (campfire ? raw.instrument : "") || "standard");
   out.role = String(raw.role || "support");
   out.expression = raw.expression && typeof raw.expression === "object" && !Array.isArray(raw.expression) ? deepCloneProjectValue(raw.expression) : {};
   out.technique = raw.technique && typeof raw.technique === "object" && !Array.isArray(raw.technique) ? deepCloneProjectValue(raw.technique) : {};
@@ -1232,7 +1237,7 @@ function sanitizeProjectData(raw){
     drumKit: safeChoice(raw.drumKit, pocketDrumKitIds(), "classic"),
     drumGroovePreset: safeChoice(raw.drumGroovePreset, [...lofiDrumGroovePresetIds(), ...chipDrumGroovePresetIds(), ...metalDrumGroovePresetIds(), ...funkDrumGroovePresetIds()], ""),
     bassTone: safeChoice(raw.bassTone, pocketBassToneIds(), "classic"),
-    theme: safeChoice(raw.theme, ["night","ocean","forest","sunset"], "night"),
+    theme: safeChoice(raw.theme, ["night","ocean","forest","sunset","set_list","pedal_board","tape_notes"], "night"),
     uiMode: inferProjectUiMode(raw),
     chordType: safeChoice(raw.chordType, ["triad","seventh","sus2","sus4"], "triad"),
     chordInstrument: safeChoice(raw.chordInstrument, chordInstrumentIds(), "pocket"),
@@ -1245,7 +1250,7 @@ function sanitizeProjectData(raw){
     midiExportMode: safeChoice(raw.midiExportMode, ["quantized","performance"], "quantized"),
     midiChordExport: safeChoice(raw.midiChordExport, ["played","block","none"], "played"),
     midiExactDurations: raw.midiExactDurations !== false,
-    guitarEnabled: !!raw.guitarEnabled,
+    guitarEnabled: raw.guitarEnabled === undefined ? chordsmithProjectHasCampfire(raw) : !!raw.guitarEnabled,
     guitarTone: safeChoice(raw.guitarTone, guitarToneIds(), "high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister, guitarRegisterIds(), "low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode, guitarStrumModeIds(), "down"),
@@ -1333,6 +1338,7 @@ function sanitizeProjectData(raw){
     data[`bassArticulation${id}`] = ensureBassArticulationTrack(raw[`bassArticulation${id}`] || []);
     data[`drumLanes${id}`] = sanitizeDrumLanes(raw[`drumLanes${id}`] || {});
     data[`guitarPattern${id}`] = normaliseGuitarState(raw[`guitarPattern${id}`] || raw[`rockGuitar${id}`] || []);
+    data[`guitarPerformance${id}`] = String(raw[`guitarPerformance${id}`] || "grid");
   });
 
   data.sections = sanitizeRichSections(raw.sections);

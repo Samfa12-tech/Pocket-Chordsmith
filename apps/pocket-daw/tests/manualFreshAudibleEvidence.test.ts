@@ -40,10 +40,11 @@ const verifyNativeCaptureEvidence = (options: Record<string, unknown>) =>
   verifyNativeCaptureEvidenceForTests(options, TEST_FINGERPRINT_DEPENDENCIES);
 
 describe("manual fresh-audible evidence", () => {
-  it("keeps PCM capture reuse semantic while retaining the exact legacy run fingerprint", () => {
+  it("invalidates old capture reuse after recording-start ownership changes and retains legacy identity", () => {
     const currentSemantic = computeNativeCaptureFingerprint();
     expect(currentSemantic.schema).toBe(E650_SEMANTIC_FINGERPRINT.schema);
-    expect(currentSemantic.value).toBe(E650_SEMANTIC_FINGERPRINT.value);
+    expect(currentSemantic.value).toBe("e9da9acb8d6235a4f26f74f1c3601289d77c4125299cb345bb0fbf82956c8bce");
+    expect(currentSemantic.value).not.toBe(E650_SEMANTIC_FINGERPRINT.value);
     expect(E650_CAPTURE_RUN_FINGERPRINT.schema).toBe("pocket-daw-native-capture-v1");
     expect(E650_CAPTURE_RUN_FINGERPRINT.value).toBe("89db764e8ddce248597275b729bde0966b770991ebd2030f2d02a0715ed1d709");
   });

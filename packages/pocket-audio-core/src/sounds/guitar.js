@@ -3,6 +3,9 @@ export const POCKET_GUITAR_ARTICULATIONS = Object.freeze(["off", "open", "chug",
 export const POCKET_GUITAR_STEP_CYCLE = Object.freeze(["off", "chug", "accent", "hold", "scratch"]);
 
 export const POCKET_GUITAR_TONES = Object.freeze(["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang", "funk_muted"]);
+// Prepared PCM instruments are deliberately separate from amplifier recipes.
+// Product selectors may expose these only after wiring their audible path.
+export const POCKET_PREPARED_GUITAR_TONES = Object.freeze(["campfire_acoustic"]);
 export const DEFAULT_GUITAR_TONE = "high_gain";
 
 export const POCKET_GUITAR_REGISTERS = Object.freeze(["low", "mid", "high"]);
@@ -40,6 +43,7 @@ export const POCKET_GUITAR_TONE_CONFIGS = Object.freeze({
 });
 
 export function findPocketGuitarTone(id) {
+  if (POCKET_PREPARED_GUITAR_TONES.includes(id)) throw new Error(`${id} requires prepared PCM playback; an amplifier fallback is unsupported.`);
   return POCKET_GUITAR_TONE_CONFIGS[id] || POCKET_GUITAR_TONE_CONFIGS[DEFAULT_GUITAR_TONE];
 }
 

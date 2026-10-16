@@ -331,7 +331,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Track Sounds and Playback Recovery
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Campfire, Passage Audition and Delivery
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -340,6 +340,17 @@ Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket C
 ${artifactTable}
 
 ## ${VERSION} Checkpoint
+
+- Campfire Acoustic adds the shared original full-voicing strum/pick recipe without replacing existing sound IDs or song data.
+- Hear this bit prepares a finite selection with visible lead-in, tail allowance and Stop; stale preparation is cancelled rather than played after edits.
+- Finish & Compare prepares native dry/processed references with loudness-matched same-position monitoring, subtle presets and reversible Apply/Discard/Undo.
+- Check WAV measures the actual generated download bytes after channel/depth, normalization and dither choices. Loudness/true-peak estimates have bounded external calibration; warnings are guidance rather than delivery certification.
+- Fully arranged native DAW Godot packs preserve the native timeline, recording-media path, FX, automation and tails. Core/Chordsmith adaptive packs keep their existing route.
+- Cache/residency, stopped-edit reuse, superseded builds and cold saved-media hydration have bounded recovery and ownership guards.
+- Menus and popovers fit the window, preserve keyboard focus and keep File/Export controls stable during passive readiness updates.
+- Project schema3 and legacy PCS1/JSON imports remain supported. Exact installed audio, MIDI, export, media, plug-in and target-runtime validation is required before publication.
+
+## Included From 0.6.50
 
 - Melody instrument changes now apply across the whole melody track in every section, persist through save/reopen, and undo as one edit. Other melody tracks and note expression are preserved.
 - Native stem rendering runs on a background worker so changing chord or melody sounds does not run audio rendering on the window thread.

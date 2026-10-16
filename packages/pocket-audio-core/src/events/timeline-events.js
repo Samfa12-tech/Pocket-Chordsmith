@@ -15,10 +15,12 @@ import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../performance
 import { chordsmithPhraseInfo } from "../performance/phrases.js";
 import { chordsmithPitchedTupletDuration, chordsmithPitchedTupletMiddleIndex, chordsmithPitchedTupletMiddleMidi } from "../performance/tuplets.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticVoicing, campfireAcousticPerformanceNote } from "../sounds/campfire-acoustic.js";
 import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, normalisePocketAudioDrumLane } from "../sounds/drum-lanes.js";
 import { normalisePocketAudioArticulation } from "../performance/expression.js";
 import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
 import { assertPocketAudioProjectResourceLimits } from "../schema/resource-limits.js";
+import { richTrackStem } from "../schema/rich-track-stem.js";
 
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
@@ -89,7 +91,7 @@ export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 
     if (!rich.ownedStems.has("bass")) addBassEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
     if (!rich.ownedStems.has("chords")) addChordEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex });
     if (!rich.ownedStems.has("melody")) addMelodyEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
-    if (!rich.ownedStems.has("guitar")) addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("guitar")) addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps, baseTime });
   }
   return {
     events,
@@ -105,6 +107,7 @@ function buildRichSectionEvents(project, section, context) {
     const sourceEvents = Array.isArray(track?.events) ? track.events : [];
     if (!sourceEvents.length) return;
     const stem = richTrackStem(trackId, track);
+    if (stem === "guitar" && section.guitar.tone === CAMPFIRE_ACOUSTIC_RECIPE.id && section.guitar.performance === "strum_pick") return;
     if (!richTrackOwnsStem(project, track)) return;
     ownedStems.add(stem);
     let previousPitched = null;
@@ -152,6 +155,7 @@ function buildRichSectionEvents(project, section, context) {
         role: source.role,
         expression: source.expression,
         technique: source.technique,
+        direction: source.direction,
         note: source.note,
         notes: source.notes,
         sourceDuration: source.duration,
@@ -349,7 +353,20 @@ function addMelodyEvents(events, project, section, context) {
 }
 
 function addGuitarEvents(events, project, section, context) {
-  if (project.mixer.stems.guitar?.mute || !section.guitar.enabled) return;
+  const campfire = section.guitar.tone === CAMPFIRE_ACOUSTIC_RECIPE.id;
+  if (!section.guitar.enabled || (project.mixer.stems.guitar?.mute && !campfire)) return;
+  if (campfire && section.guitar.performance === "strum_pick") {
+    if (context.step % project.meta.resolution !== 0) return;
+    const beat = Math.floor(context.step / project.meta.resolution);
+    const chord = currentChord(project, section, context.step);
+    const note = campfireAcousticPerformanceNote({beat,rootPc:chord.rootPc,quality:chord.quality,register:section.guitar.register,direction:guitarDirection(Math.floor(beat / 4),section.guitar.strumMode)});
+    if (!note) return;
+    events.push(baseEvent(project, section, context, {
+      ...note, stem:"guitar", type:"guitar", time:context.baseTime + beat * beatSeconds(project),
+      humanizeSeed:17, humanizeVelocity:false
+    }));
+    return;
+  }
   const art = section.guitar.pattern[context.step];
   if (!art || art === "off" || art === "hold") return;
   const chord = currentChord(project, section, context.step);
@@ -357,11 +374,13 @@ function addGuitarEvents(events, project, section, context) {
     stem: "guitar",
     type: "guitar",
     duration: guitarDuration(project, section, context.step, art, context.totalSteps),
-    velocity: section.guitar.volume,
-    midiNotes: powerChordNotes(project, section, chord),
+    // Campfire's shared mixer applies volume once, independently of note intent.
+    velocity: campfire ? (art === "accent" ? 1.28 : 1) : section.guitar.volume,
+    midiNotes: campfire ? campfireAcousticVoicing({ rootPc: chord.rootPc, quality: chord.quality, register: section.guitar.register }) : powerChordNotes(project, section, chord),
     instrument: section.guitar.tone,
     articulation: art,
     direction: guitarDirection(context.step, section.guitar.strumMode),
+    ...(campfire ? { technique: { campfire: { recipeVersion: CAMPFIRE_ACOUSTIC_RECIPE.version, strumSeconds: CAMPFIRE_ACOUSTIC_RECIPE.strumSeconds, tailPolicy: CAMPFIRE_ACOUSTIC_RECIPE.tailPolicy } } } : {}),
     humanizeSeed: 17,
     humanizeVelocity: false
   }));
@@ -556,15 +575,6 @@ function guitarDirection(step, mode) {
   if (mode === "up") return "up";
   if (mode === "alternate") return step % 2 ? "up" : DEFAULT_GUITAR_STRUM_MODE;
   return DEFAULT_GUITAR_STRUM_MODE;
-}
-
-function richTrackStem(trackId, track) {
-  const requested = String(track?.stem || track?.role || trackId || "").toLowerCase();
-  if (["drums", "drum", "kick", "snare", "rim", "clap", "hat", "hat_closed", "hat_open", "ride", "crash", "china", "tom_high", "tom_mid", "tom_low", "percussion"].includes(requested)) return "drums";
-  if (requested === "bass") return "bass";
-  if (["chord", "chords", "harmony", "stab", "stabs"].includes(requested)) return "chords";
-  if (requested === "guitar") return "guitar";
-  return "melody";
 }
 
 function richEventType(stem, lane) {

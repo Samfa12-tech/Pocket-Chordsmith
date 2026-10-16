@@ -11,6 +11,23 @@ import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 describe("Pocket Chordsmith import", () => {
+  it("activates enabled authored rich guitar without a legacy step pattern and preserves explicit strum direction", () => {
+    const source = { projectVersion: 17, bpm: 120, guitarEnabled: true, guitarStrumMode: "down", songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
+      { tick: 0, durationTicks: 240, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, direction: "up", technique: { campfire: { seed: 123 } } }
+    ] } } } } };
+    const before = JSON.stringify(source);
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(source));
+    const guitar = project.tracks.find((track) => track.role === "guitar")!;
+    expect(guitar.active).toBe(true);
+    expect(guitar.mute).toBe(false);
+    const event = renderTimelineEvents(project).find((item) => item.instrument === "campfire_acoustic")!;
+    expect(event.direction).toBe("up");
+    expect(event.midiNotes).toEqual([50, 57, 62, 66]);
+    expect(event.technique?.campfire).toEqual({ seed: 123 });
+    expect(JSON.stringify(source)).toBe(before);
+    const disabled = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ ...source, guitarEnabled: false }));
+    expect(disabled.tracks.find((track) => track.role === "guitar")?.mute).toBe(true);
+  });
   it("decodes PCS1 share codes", () => {
     const source = createDemoChordsmithProject();
     const code = buildPocketChordsmithShareCode(source);

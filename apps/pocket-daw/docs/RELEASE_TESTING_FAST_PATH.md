@@ -23,9 +23,14 @@ fresh-audible installed smoke, evidence-only candidate verification, and
 exact publication. Pocket DAW 0.6.50 is now published from exact tested commit
 `ec3f783b24abdd85d46229c2893ea953e96248cd` with whole-track melody sound changes and native
 render/cache recovery fixes. Its exact installer passed fresh-audible, MIDI,
-export, media, VST3 and Godot/Chromium target validation. Current 0.6.51 source
-is a release-status checkpoint only, with no installer, receipt or installed
-smoke. Never rebuild or restage 0.6.50 from later source.
+export, media, VST3 and Godot/Chromium target validation. The frozen 0.6.51
+candidate is withheld after the native Open dialog blocked commands. Current
+0.6.52 source is the unreleased replacement with asynchronous file selection
+and project/recovery/MIDI playback-preparation ownership guards. Preserve the
+old artifact and unsaved project; preparing this replacement does not authorize
+installation. Source status does not establish a frozen
+installer or installed pass; the candidate receipt and exact retained evidence
+below establish those gates. Never rebuild or restage 0.6.50 from later source.
 
 ## Core Rule
 

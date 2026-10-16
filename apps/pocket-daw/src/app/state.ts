@@ -15,6 +15,8 @@ import type { MidiChordsmithConversionIntent, MidiConversionRole } from "../daw/
 import type { MidiImportPlacementMode } from "../daw/midiClips";
 import { createEmptySampleLibraryIndex, type SampleLibraryCategory, type SampleLibraryIndex } from "../native/sampleLibrary";
 import type { Vst3BetaStatus, Vst3InstanceStatus, Vst3ModuleCandidate } from "../plugins/vst3Foundation";
+import type { FinishPresetId } from "../daw/finishing";
+import { initialDeliveryQcState, type DeliveryQcState } from "../audio/deliveryQc";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: DrumLaneId; step: number }
@@ -39,6 +41,19 @@ export interface AppState {
   lowerDockTab: LowerDockTab;
   status: string;
   playing: boolean;
+  auditionLeadInSeconds: number;
+  auditionTailSeconds: number;
+  selectionAudition: { phase: "idle" | "preparing" | "playing"; message: string };
+  finishComparison: {
+    presetId: FinishPresetId;
+    example: boolean;
+    phase: "idle" | "preparing" | "ready" | "playing";
+    side: "a" | "b";
+    message: string;
+    rangeLabel: string;
+    readings: string[];
+    warnings: string[];
+  };
   playheadBar: number;
   meterLevels: Record<string, number>;
   importText: string;
@@ -52,6 +67,7 @@ export interface AppState {
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
+  deliveryQc: DeliveryQcState;
   recent: RecentProject[];
   showFilePanel: boolean;
   showControls: boolean;
@@ -80,6 +96,7 @@ export interface AppState {
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
   midiInputRecording: MidiInputRecordingUiState;
+  midiInputStartPending: boolean;
   recordingPunchEnabled: boolean;
   recordingTakeMode: RecordingTakeMode;
   sampleLibrary: SampleLibraryIndex;
@@ -289,6 +306,10 @@ export function createInitialState(): AppState {
     lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
+    auditionLeadInSeconds: 0.5,
+    auditionTailSeconds: 1,
+    selectionAudition: { phase: "idle", message: "" },
+    finishComparison: { presetId: "tidy", example: false, phase: "idle", side: "a", message: "Choose a passage and prepare a comparison. Nothing plays or changes until you choose it.", rangeLabel: "", readings: [], warnings: [] },
     playheadBar: 1,
     meterLevels: {},
     importText: "",
@@ -302,6 +323,7 @@ export function createInitialState(): AppState {
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
+    deliveryQc: initialDeliveryQcState(),
     recent: [],
     showFilePanel: false,
     showControls: false,
@@ -336,6 +358,7 @@ export function createInitialState(): AppState {
     },
     recording: createRecordingUiState(),
     midiInputRecording: createMidiInputRecordingUiState(),
+    midiInputStartPending: false,
     recordingPunchEnabled: false,
     recordingTakeMode: "replace",
     sampleLibrary: createEmptySampleLibraryIndex(),
@@ -437,6 +460,7 @@ export function loadProjectIntoState(
     chordsmithStepSelection: null,
     recording: createRecordingUiState(),
     midiInputRecording: createMidiInputRecordingUiState(),
+    midiInputStartPending: false,
     recordingPunchEnabled: state.recordingPunchEnabled,
     recordingTakeMode: state.recordingTakeMode
   };

@@ -912,7 +912,7 @@ function loadDemo(){
   applyWesternPresetToProject("western_frontier_ride", {fullLoop:true, pushUndo:false, render:false, status:false, preview:false});
   renderAll();
   primePocketAudioCoreFromCurrentProject("demo").catch(() => {});
-  setStatus("Loaded Pocket Chordsmith v68 demo");
+  setStatus("Loaded Pocket Chordsmith v70 demo");
 }
 function bytesVLQ(value){
   let buffer = value & 0x7F;
@@ -1140,7 +1140,7 @@ function buildChordsmithParityTrace(options={}){
     const events = buildSequenceEvents().map(normalizeChordsmithTraceEvent);
     return {
       app: "PocketChordsmith",
-      version: "v68",
+      version: "v70",
       projectVersion: PROJECT_SCHEMA_VERSION,
       scope: getSelectedExportScope(),
       eventCount: events.length,
@@ -1391,17 +1391,24 @@ function buildPerformanceMidiEvents(ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
   return midiEvents.sort((a,b) => a.tick - b.tick || (a.on === b.on ? 0 : a.on ? -1 : 1));
 }
 
-function exportMidiFile(){
+async function exportMidiFile(){
   try{
+    const exportMode = state.midiExportMode;
     const ticksPerQuarter = MIDI_TICKS_PER_QUARTER;
     const tempo = Math.round(60000000 / state.bpm);
     const track = [];
     const pushEvent = (delta, bytes) => track.push(...bytesVLQ(delta), ...bytes);
     pushEvent(0, [0xFF, 0x51, 0x03, (tempo >> 16) & 0xFF, (tempo >> 8) & 0xFF, tempo & 0xFF]);
 
-    const midiEvents = state.midiExportMode === "performance"
+    let midiEvents = exportMode === "performance"
       ? buildPerformanceMidiEvents(ticksPerQuarter)
       : buildQuantizedMidiEvents(ticksPerQuarter);
+    if(chordsmithStateHasCampfire()){
+      const snapshot = exportProject();
+      const prepared = await chordsmithCampfireMidiEvents(midiEvents, ticksPerQuarter, snapshot, coreTimelineOptionsForExportScope(getSelectedExportScope()));
+      midiEvents = prepared.events;
+      if(prepared.guitarProgram !== null) pushEvent(0, [0xC3, prepared.guitarProgram]);
+    }
 
     let lastTick = 0;
     midiEvents.forEach(ev => {
@@ -1426,12 +1433,12 @@ function exportMidiFile(){
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = state.midiExportMode === "performance" ? "pocket_chordsmith_performance_export.mid" : "pocket_chordsmith_quantized_export.mid";
+    a.download = exportMode === "performance" ? "pocket_chordsmith_performance_export.mid" : "pocket_chordsmith_quantized_export.mid";
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
-    setStatus(`Exported ${state.midiExportMode} MIDI - ${midiEvents.length} MIDI events`);
+    setStatus(`Exported ${exportMode} MIDI - ${midiEvents.length} MIDI events`);
   }catch(e){
     console.error(e);
     setStatus("MIDI export failed");

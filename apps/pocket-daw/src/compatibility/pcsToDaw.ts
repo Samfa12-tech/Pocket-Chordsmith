@@ -53,7 +53,7 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
     return clip;
   });
 
-  const guitarActive = project.guitarEnabled && SECTION_IDS.some((id) => project.sections[id].guitarPattern.some((v) => v !== "off"));
+  const guitarActive = project.guitarEnabled && SECTION_IDS.some((id) => project.sections[id].guitarPattern.some((v) => v !== "off") || (project.guitarTone === "campfire_acoustic" && project.sections[id].guitarPerformance === "strum_pick") || project.sections[id].richEvents.guitar.some((event) => !event.compactMirror));
   const totalBars = Math.max(1, clips.reduce((max, clip) => Math.max(max, clip.startBar + clip.barLength - 1), 1));
   const tracks = createDefaultTracks({ guitarActive });
   addSourceMelodyTracks(tracks, project);
@@ -213,7 +213,9 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
   if (guitar) {
     guitar.volume = project.guitarVolume;
     guitar.active = guitarActive;
-    guitar.mute = !guitarActive;
+    // An empty prepared Grid is inactive, not an explicit mixer mute. Keep
+    // that distinction so later performance edits can activate it safely.
+    guitar.mute = project.guitarTone === "campfire_acoustic" ? !project.guitarEnabled : !guitarActive;
     guitar.metadata = {
       ...(guitar.metadata || {}),
       ...sourceSoundMetadata,

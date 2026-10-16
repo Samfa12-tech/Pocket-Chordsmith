@@ -2,7 +2,10 @@
 
 Pocket Chordsmith is a mobile-first music sketchpad for building chord progressions, beats, basslines, melodies, editable full-song arrangements, MIDI exports, and WAV exports in the browser.
 
-The current app build is `pocket_chordsmith_v68_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
+The current app build is `pocket_chordsmith_v70_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
+
+This is the v69 source candidate with Core0.3.0; the verified public itch channel
+still serves v68. Publication remains a separate reviewed step.
 
 Composition/agent guidance is versioned in
 `docs/COMPOSING_FOR_POCKET_CHORDSMITH.md`. New native project JSON targets
@@ -20,7 +23,7 @@ License/status: source-available app, `UNLICENSED`. See the repository root
 ## Included Files
 
 - `index.html` - hosting entry point.
-- `pocket_chordsmith_v68_core_bridge.html` - current Pocket Chordsmith app with Pocket Audio Core bridge diagnostics and core WAV export fallback.
+- `pocket_chordsmith_v70_core_bridge.html` - current Pocket Chordsmith app with Pocket Audio Core bridge diagnostics and core WAV export fallback.
 - `../archive/unsupported-runnable-builds/chordsmith-web/pocket_chordsmith_v67_direct_godot_push.html` - unsupported historical direct-Godot snapshot; excluded from current builds.
 - `pocket_chordsmith_v65_midi_guitar_import_polish.html` - previous MIDI/guitar import polish build.
 - `pocket_chordsmith_v65_notes_and_limitations.txt` - implementation notes, limitations, and manual test recommendations for v65.
@@ -38,7 +41,7 @@ License/status: source-available app, `UNLICENSED`. See the repository root
 
 ## Local Use
 
-Open `apps/chordsmith-web/index.html` or `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html` in a browser from this workspace. For stricter browser testing, serve the `apps/chordsmith-web` folder locally:
+Open `apps/chordsmith-web/index.html` or `apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html` in a browser from this workspace. For stricter browser testing, serve the `apps/chordsmith-web` folder locally:
 
 ```powershell
 cd apps/chordsmith-web
@@ -82,7 +85,7 @@ Production pages keep the configured official handoff path.
 
 ## Lofi Chill Pack
 
-`pocket_chordsmith_v68_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes `Compose Lofi Song`; the Advanced Genre Studio separates Current Section, Apply Sound Profile, Compose Full Song, and Game Loop actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
+`pocket_chordsmith_v70_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes `Compose Lofi Song`; the Advanced Genre Studio separates Current Section, Apply Sound Profile, Compose Full Song, and Game Loop actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
 
 The new lofi fields are optional and schema `16` stays backwards compatible. JSON export/import and `PCS1:` share codes preserve lofi profile metadata; MIDI export remains note-focused and does not encode vinyl/tape texture.
 
@@ -92,13 +95,13 @@ See `../../docs/LOFI_CHILL_PACK_IMPLEMENTATION.md` for the shared preset IDs, co
 
 ## Chip Tune Pack
 
-`pocket_chordsmith_v68_core_bridge.html` also includes a procedural `chip_tune` profile with classic square/triangle/noise colors, modern chip punch, phat bass, and harmonised lead/chord jams. Simple mode exposes `Compose Chip Tune`; the Advanced Genre Studio keeps full-song composition and loop generation explicit. Advanced mode exposes chip preset, kit, bass, and texture controls.
+`pocket_chordsmith_v70_core_bridge.html` also includes a procedural `chip_tune` profile with classic square/triangle/noise colors, modern chip punch, phat bass, and harmonised lead/chord jams. Simple mode exposes `Compose Chip Tune`; the Advanced Genre Studio keeps full-song composition and loop generation explicit. Advanced mode exposes chip preset, kit, bass, and texture controls.
 
 Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`, `chip_arcade_start_loop.json`, and `chip_menu_glow_loop.json`.
 
 ## Heavy Metal Pack
 
-`pocket_chordsmith_v68_core_bridge.html` includes a procedural `heavy_metal` profile with classic chug, thrash gallop, doom, power anthem, boss blast, and breakdown presets. Simple mode exposes `Compose Metal Song`; Advanced Settings -> Genre exposes distinct profile, current-section, full-song, and game-loop actions alongside preset, drum kit, bass tone, and texture controls.
+`pocket_chordsmith_v70_core_bridge.html` includes a procedural `heavy_metal` profile with classic chug, thrash gallop, doom, power anthem, boss blast, and breakdown presets. Simple mode exposes `Compose Metal Song`; Advanced Settings -> Genre exposes distinct profile, current-section, full-song, and game-loop actions alongside preset, drum kit, bass tone, and texture controls.
 
 ## Genre Composer
 
@@ -120,7 +123,7 @@ schema, and compatibility guidance, use the documents linked above.
 
 ### v68 Pocket Audio Core Bridge
 
-- New file/version: `pocket_chordsmith_v68_core_bridge.html`; `index.html` now redirects to v68.
+- New file/version: `pocket_chordsmith_v70_core_bridge.html`; `index.html` now redirects to v68.
 - Updated to Pocket Audio Core `0.2.0` with PCS schema-17 expressive events and canonical sound profiles.
 - Project schema is `17`; schema `16` remains the explicit legacy compatibility projection.
 - Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors transport start/stop when the repo-local core module is available.
@@ -195,7 +198,7 @@ Recommended manual checks before calling v65 fully release-ready:
 For itch.io, upload a zip that contains at least:
 
 - `index.html`
-- `pocket_chordsmith_v68_core_bridge.html`
+- `pocket_chordsmith_v70_core_bridge.html`
 - `icon.png`
 
 Keep generated exports, old local snapshots, and add-on packaging zips out of Git unless they are intentional release artifacts.

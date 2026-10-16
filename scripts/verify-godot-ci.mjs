@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import { assertGodotProcessSucceeded } from "./godot-run-result.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const godotBin = argument("--godot-bin");
@@ -27,7 +28,9 @@ try {
     "",
   ].join("\n"));
 
-  run(["--headless", "--path", workspace, "--editor", "--quit"]);
+  // This integration intentionally retains the complete main/1.2.0 addon.
+  // Its 1.3.0 tests remain with the held addon branch, not absent-file skips.
+  run(["--headless", "--path", workspace, "--import"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_schema17_contract_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_trust_boundary_test.gd");
   runScript("res://addons/pocket_chordsmith/tools/validate_editor_accessibility.gd", ["--audio-driver", "Dummy"]);
@@ -68,11 +71,10 @@ function runScript(script, godotArgs = [], scriptArgs = []) {
 }
 
 function run(args) {
-  const result = spawnSync(godotBin, args, { cwd: workspace, encoding: "utf8" });
+  const result = spawnSync(godotBin, args, { cwd: workspace, encoding: "utf8", timeout: 180_000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Godot ${args.join(" ")} failed with status ${result.status}`);
+  assertGodotProcessSucceeded(result, `Godot ${args.join(" ")}`);
 }
 
 function argument(name) {

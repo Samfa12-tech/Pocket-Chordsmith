@@ -876,6 +876,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Transport",
+    control: "Hear this bit",
+    actionId: "audition-selection",
+    does: "Auditions the active edit range or selected clips in the current native mix, with visible lead-in and tail and a sample-clock end boundary.",
+    useWhen: "Use for a passage of up to 120 seconds including context. Change lead-in/tail in the selected clip inspector; Stop cancels preparation or playback.",
+    aiNote: "GUI monitor action only; it never applies an edit or starts automatically. Native Windows audio is required. Selection/source/settings changes reject stale preparation. Recording must finish first. The final 10ms preview fade is excluded from exports; device/listening acceptance remains separate."
+  },
+  {
+    surface: "Transport",
     control: "Stop",
     actionId: "stop",
     does: "Stops playback and live metronome activity.",
@@ -2096,6 +2104,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Enables guitar and edits tone, register, strum mode, and volume.",
     useWhen: "Use to shape generated guitar before arranging or exporting game loops.",
     aiNote: "Guitar enable state affects whether guitar material is audible and exported."
+  },
+  {
+    surface: "Chordsmith Editing",
+    control: "Guitar Performance",
+    selector: "data-guitar-performance",
+    does: "Chooses the stored grid or Campfire strum and pick for the current section.",
+    useWhen: "Use Campfire Acoustic in Low or Mid register to follow the section chords with strums and picked notes.",
+    aiNote: "The stored grid and imported rich notes remain intact. Choose Grid or Undo to restore them. High picking is unavailable."
   },
   {
     surface: "Drum Kit Lanes",

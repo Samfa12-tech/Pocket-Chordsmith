@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chordsmithFxParameters, createGodotExportKit, createGodotManifest, GODOT_EXPORT_PROFILES } from "../src/index.js";
+import { chordsmithFxParameters, createGodotExportKit, createGodotManifest, GODOT_EXPORT_PROFILES, decodePcmWavBytes, normalisePocketChordsmithProject, renderPocketAudioStemBuffers } from "../src/index.js";
 
 const godotFixture = {
   projectVersion: 16,
@@ -154,4 +154,59 @@ test("PROCEDURAL_PREVIEW marks manifest as preview only", async () => {
   assert.equal(manifest.previewOnly, true);
   assert.equal(files.size, 0);
   assert.ok(manifest.notes.some((note) => note.includes("not a parity export")));
+});
+
+test("Godot stems contain the source renderer's instrument PCM, including ordered Campfire notes", async () => {
+  const project = normalisePocketChordsmithProject({ ...godotFixture, projectVersion: 17, sections: { A: { tracks: { guitar: { events: [
+    { tick: 0, durationTicks: 120, notes: [50, 57, 62, 66], velocity: 110, sound: "campfire_acoustic", direction: "up" }
+  ] } } } } });
+  const { manifest, files } = await createGodotExportKit(project, { profile: "LOOP_KIT", sampleRate: 8000 });
+  const expected = renderPocketAudioStemBuffers(project, { scope: "section", sectionId: "A", sampleRate: 8000, tailSeconds: 0 });
+  const actual = decodePcmWavBytes(new Uint8Array(await files.get(manifest.sections.A.assets.guitar).arrayBuffer()));
+  assert.ok(expected.guitar.channels[0].some((sample) => Math.abs(sample) > 0.001));
+  let maxError = 0;
+  for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < actual.channels[channel].length; frame += 1) {
+    maxError = Math.max(maxError, Math.abs(actual.channels[channel][frame] - expected.guitar.channels[channel][frame]));
+  }
+  assert.ok(maxError <= 1 / 32767, `source-recipe stem error ${maxError} exceeds PCM16 quantization`);
+});
+
+test("decoded Core stems reconstruct the dry full-mix reference within PCM16 quantization", async () => {
+  const { manifest, files } = await createGodotExportKit(godotFixture, { profile: "STEM_SYNC", sampleRate: 8000 });
+  const decode = async (key) => decodePcmWavBytes(new Uint8Array(await files.get(manifest.assets[key]).arrayBuffer()));
+  const full = await decode("mix");
+  const stems = await Promise.all(["drums", "bass", "chords", "melody", "guitar"].map(decode));
+  let maxError = 0;
+  for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < full.channels[channel].length; frame += 1) {
+    const sum = stems.reduce((value, stem) => value + stem.channels[channel][frame], 0);
+    maxError = Math.max(maxError, Math.abs(sum - full.channels[channel][frame]));
+  }
+  assert.ok(maxError <= 6 / 32767, `decoded reconstruction error ${maxError} exceeds six PCM16 quantization steps`);
+});
+
+test("lofi shared texture is exported exactly once and mix/layers are exclusive alternatives", async () => {
+  const { manifest, files } = await createGodotExportKit(lofiGodotFixture, { profile: "STEM_SYNC", sampleRate: 8000 });
+  assert.ok(files.has(manifest.assets.shared_bed));
+  const group = manifest.mixContract.playbackGroups[0];
+  const fullSet = group.alternatives.find((item) => item.id === "full-mix-reference").assets;
+  const layers = group.alternatives.find((item) => item.id === "adaptive-layers").assets;
+  assert.deepEqual(fullSet, [manifest.assets.mix]);
+  assert.ok(!layers.includes(manifest.assets.mix));
+  assert.equal(layers.filter((path) => path === manifest.assets.shared_bed).length, 1);
+  assert.equal(manifest.mixContract.masterFx, "metadata-only-not-baked");
+  const decode = async (path) => decodePcmWavBytes(new Uint8Array(await files.get(path).arrayBuffer()));
+  const full = await decode(manifest.assets.mix);
+  const stems = await Promise.all(layers.map(decode));
+  let maxError = 0;
+  let omittedBedError = 0;
+  const bed = await decode(manifest.assets.shared_bed);
+  for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < full.channels[channel].length; frame += 1) {
+    const sum = stems.reduce((value, stem) => value + stem.channels[channel][frame], 0);
+    maxError = Math.max(maxError, Math.abs(sum - full.channels[channel][frame]));
+    omittedBedError = Math.max(omittedBedError, Math.abs(sum - bed.channels[channel][frame] - full.channels[channel][frame]));
+  }
+  assert.ok(maxError <= 7 / 32767, `shared-bed reconstruction error ${maxError}`);
+  assert.ok(omittedBedError > 7 / 32767, "fixture must detect a missing shared bed");
+  const hybrid = await createGodotExportKit(godotFixture, { profile: "HYBRID", sampleRate: 8000 });
+  assert.ok(hybrid.files.has(hybrid.manifest.assets.mix), "HYBRID keeps an authoritative full-mix reference");
 });

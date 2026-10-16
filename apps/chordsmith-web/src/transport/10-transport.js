@@ -11,7 +11,9 @@ function buildPlaybackPlan(mode="section"){
       absStep++;
     }
   });
-  return plan;
+  return mode === "audition" && chordAudition
+    ? plan.filter(item => item.step >= chordAudition.start && item.step < chordAudition.end)
+    : plan;
 }
 const MAX_SCHEDULER_STEPS_PER_TICK = 64;
 const MIN_SCHEDULER_AHEAD_SECONDS = 0.005;
@@ -25,7 +27,8 @@ function rebuildSchedulerPlanTiming(){
   schedulerPlanTimingSignature = currentSchedulerTimingSignature();
 }
 function fastForwardSchedulerPast(targetTime){
-  const skipped = schedulerStepsToReach(nextNoteTime, targetTime, playStep, schedulerPlanTiming);
+  const overdue = schedulerStepsToReach(nextNoteTime, targetTime, playStep, schedulerPlanTiming);
+  const skipped = state.playbackMode === "audition" ? Math.min(overdue, Math.max(0, state.transportPlan.length - playStep)) : overdue;
   if(!skipped) return 0;
   nextNoteTime += elapsedSchedulerPlanSeconds(skipped, playStep, schedulerPlanTiming);
   playStep += skipped;
@@ -176,6 +179,7 @@ function schedulePlanStep(item, time){
   state.pendingUiTimers.add(timer);
 }
 function scheduler(){
+  if(checkChordAuditionClock()) return;
   if(audioCtx && audioCtx.state === "suspended"){
     audioCtx.resume().catch(() => {});
     return;
@@ -186,7 +190,7 @@ function scheduler(){
   const horizon = now + SCHEDULER_LOOKAHEAD_SECONDS;
   fastForwardSchedulerPast(now + MIN_SCHEDULER_AHEAD_SECONDS);
   let work = 0;
-  while(state.transportPlan.length && nextNoteTime < horizon && work < MAX_SCHEDULER_STEPS_PER_TICK){
+  while(state.transportPlan.length && (state.playbackMode !== "audition" || playStep < state.transportPlan.length) && nextNoteTime < horizon && work < MAX_SCHEDULER_STEPS_PER_TICK){
     const item = state.transportPlan[playStep % state.transportPlan.length];
     if(nextNoteTime >= now + MIN_SCHEDULER_AHEAD_SECONDS) schedulePlanStep(item, nextNoteTime);
     advancePlaybackPlanStep(item);
@@ -194,22 +198,37 @@ function scheduler(){
   }
 }
 async function startPlayback(mode="section"){
-  state.bpm = sanitizeBpm(els.bpmInput.value, 96);
-  els.bpmInput.value = state.bpm;
+  if(mode !== "audition") clearChordAudition();
+  const audition = mode === "audition" ? chordAudition : null;
+  const playbackRequest = ++chordsmithPlaybackRequest;
+  if(!audition){
+    state.bpm = sanitizeBpm(els.bpmInput.value, 96);
+    els.bpmInput.value = state.bpm;
+  }
   storeSection();
-  primePocketAudioCoreFromCurrentProject(mode === "sequence" ? "song playback" : "section playback")
+  if(!audition) primePocketAudioCoreFromCurrentProject(mode === "sequence" ? "song playback" : "section playback")
     .then(() => callPocketAudioCore("play", {scope: mode === "sequence" ? "sequence" : "section", sectionId: state.currentSection}))
     .catch(() => {});
   els.playBtn.textContent = mode === "sequence" ? "Play" : "...";
   if(els.playSequenceBtn) els.playSequenceBtn.textContent = mode === "sequence" ? "..." : "Play Song";
   setStatus(mode === "sequence" ? "Starting song sequence..." : "Starting audio...");
   await ensureAudio();
+  if(playbackRequest !== chordsmithPlaybackRequest) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
+  if(!(await prepareChordsmithCampfirePlayback(null, playbackRequest))) return;
+  if(playbackRequest !== chordsmithPlaybackRequest) return;
+  if(audition && (!isAuditionCurrent(audition) || JSON.stringify(exportProject()) !== audition.source)) return;
   clearSchedulerTimers();
   clearPendingUiTimers();
   state.transportPlan = buildPlaybackPlan(mode);
   rebuildSchedulerPlanTiming();
   state.playbackMode = mode;
   nextNoteTime = audioCtx.currentTime + 0.04;
+  if(audition){
+    audition.endAudioTime = nextNoteTime + schedulerPlanTiming.total + audition.tail;
+    auditionMessage = `Playing ${audition.label}. No automatic quality check.`;
+    renderAuditionUi();
+  }
   playStep = 0;
   resetLiveRecordStepClock();
   state.currentStep = -1;
@@ -229,9 +248,16 @@ async function startPlayback(mode="section"){
     scheduler();
   }, SCHEDULER_INTERVAL_MS);
   schedulerTimers.add(schedulerTimer);
+  if(audition){
+    // Anchor after UI work and schedule the first lookahead before yielding.
+    nextNoteTime = audioCtx.currentTime + 0.04;
+    audition.endAudioTime = nextNoteTime + schedulerPlanTiming.total + audition.tail;
+    scheduler();
+  }
 }
 async function togglePlay(mode="section"){
   if(transportBusy) return;
+  const auditionRequest = mode === "audition" ? chordAudition : null;
   transportBusy = true;
   try{
     if(state.isPlaying){
@@ -243,24 +269,31 @@ async function togglePlay(mode="section"){
     }
     await startPlayback(mode);
   }catch(e){
+    if(auditionRequest && chordAudition !== auditionRequest) return;
+    if(auditionRequest) auditionRequest.error = e?.message || "Could not prepare this passage.";
     console.error(e);
     state.isPlaying = false;
     clearSchedulerTimers();
     updateTransportButtonLabels();
-    setStatus("Could not start audio");
+    setStatus(e?.message || "Could not start audio");
   }finally{
     transportBusy = false;
+    renderAuditionUi();
   }
 }
-function stopPlayback(){
+function stopPlayback(options={}){
+  const wasAudition = !!chordAudition || state.playbackMode === "audition" || options?.forAudition === true;
+  clearChordAudition();
+  cancelChordsmithCampfirePlayback();
   callPocketAudioCore("stop");
   state.isPlaying = false;
   clearSchedulerTimers();
   resetLiveRecordStepClock();
   silenceChordVoices();
   silenceLiveVoices(activeLeadVoices);
+  silenceLiveVoices(activeBassVoices);
   silenceLiveVoices(activeGuitarVoices);
-  if(state.followPlaybackSection !== false && state.currentPlaybackSection){
+  if(!wasAudition && state.followPlaybackSection !== false && state.currentPlaybackSection){
     storeSection();
     state.currentSection = sanitizeSectionId(state.currentPlaybackSection);
     syncSection();
@@ -270,6 +303,7 @@ function stopPlayback(){
   clearPendingUiTimers();
   resetPlaybackHighlights();
   updateTransportButtonLabels();
-  renderAll();
+  if(!wasAudition) renderAll();
+  renderAuditionUi();
   setStatus("Stopped");
 }

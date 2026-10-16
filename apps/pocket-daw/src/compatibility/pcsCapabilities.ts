@@ -1,5 +1,7 @@
 import type { JsonObject } from "../daw/schema";
 import type { SanitizedPcsProject, SanitizedPcsRichEvent } from "./pcsSanitizer";
+import { createPocketAudioRendererCapabilityReport } from "../../../../packages/pocket-audio-core/src/engine/capabilities.js";
+import { POCKET_PREPARED_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 
 export const PCS17_FORMAT_FEATURES = [
   "sound-profile-v1",
@@ -102,7 +104,8 @@ export function pocketDawPcsCapabilities(): JsonObject {
     formatFeatures: [...PCS17_FORMAT_FEATURES],
     profiles: [...POCKET_DAW_PROFILE_IDS],
     articulations: [...DIRECT_ARTICULATIONS],
-    expandedDrumLanes: Object.keys(DRUM_LANE_MAP)
+    expandedDrumLanes: Object.keys(DRUM_LANE_MAP),
+    preparedGuitarTones: [...POCKET_PREPARED_GUITAR_TONES]
   };
 }
 
@@ -130,6 +133,14 @@ export function negotiatePocketDawPcsCapabilities(project: SanitizedPcsProject):
     });
   });
 
+  const preparedReport = createPocketAudioRendererCapabilityReport({
+    soundProfile:project.soundProfile,chordType:project.chordType,
+    sections:Object.fromEntries(Object.entries(project.sections).map(([id,section]) => [id,{
+      guitar:{enabled:project.guitarEnabled,tone:project.guitarTone,performance:section.guitarPerformance || "grid",pattern:section.guitarPattern},
+      richTracks:Object.fromEntries(Object.entries(section.richEvents).map(([role,events]) => [role,{events:events.map(event => ({...event,articulation:event.raw.articulation}))}]))
+    }]))
+  });
+  preparedReport.losses.filter(entry => entry.feature.startsWith("campfire-") || entry.feature.startsWith("guitar-performance:")).forEach(entry => entries.push({...entry,action:entry.action as PcsCompatibilityAction}));
   return {
     consumer: "pocket-daw-native",
     schemaVersions: [16, 17],

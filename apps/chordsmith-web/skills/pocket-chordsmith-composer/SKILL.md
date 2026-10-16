@@ -9,7 +9,7 @@ Use this skill when asked to create, improve, vary, or export music for Pocket C
 
 ## First Steps
 
-1. Check the current app HTML, usually `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`, for `PROJECT_SCHEMA_VERSION`, `SECTION_IDS`, `MAX_BARS`, `MAX_MELODY_TRACKS`, `MAX_SEQUENCE_SLOTS`, allowed select values, `sanitizeProjectData()`, and `exportProject()` before composing. Prefer the newest schema in the project over this file if they differ.
+1. Check the current app HTML, usually `apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html`, for `PROJECT_SCHEMA_VERSION`, `SECTION_IDS`, `MAX_BARS`, `MAX_MELODY_TRACKS`, `MAX_SEQUENCE_SLOTS`, allowed select values, `sanitizeProjectData()`, and `exportProject()` before composing. Prefer the newest schema in the project over this file if they differ.
 2. Compose for phone use first: clear loop identity, fast auditioning, restrained density, and export that imports without hand repair.
 3. Return valid JSON only when the user asks for import-ready output. Do not wrap it in Markdown unless the user asks for explanation.
 

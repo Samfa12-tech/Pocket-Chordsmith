@@ -22,7 +22,7 @@ import { FUNK_AUDIO_PROFILE_ID, normaliseFunkProjectSettings } from "../presets/
 import { WESTERN_AUDIO_PROFILE_ID, normaliseWesternProjectSettings } from "../presets/western.js";
 import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../performance/chord-rhythm.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
-import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../sounds/guitar.js";
 import { migratePocketChordsmithProject } from "./migrations.js";
 import { assertPocketAudioProjectResourceLimits } from "./resource-limits.js";
 
@@ -161,9 +161,10 @@ function normaliseSection(project, id, context) {
     })),
     guitar: {
       enabled: Boolean(project.guitarEnabled),
-      tone: safeChoice(project.guitarTone, POCKET_GUITAR_TONES, DEFAULT_GUITAR_TONE),
+      tone: safeChoice(project.guitarTone, [...POCKET_GUITAR_TONES, ...POCKET_PREPARED_GUITAR_TONES], DEFAULT_GUITAR_TONE),
       register: safeChoice(project.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
       strumMode: safeChoice(project.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
+      performance: String(project[`guitarPerformance${id}`] || "grid"),
       volume: clamp(asNumber(project.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
       pattern: guitarPattern
     },
@@ -226,8 +227,10 @@ function normaliseRichTracks(value, context) {
 
 function normaliseRichEvent(value, context) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const sound = source.sound ?? (source.instrument === "campfire_acoustic" ? source.instrument : undefined);
+  const campfire = sound === "campfire_acoustic";
   const step = source.step === undefined ? undefined : clamp(asNumber(source.step, 0), 0, Math.max(0, context.steps - 0.000001));
-  const tick = source.tick === undefined ? undefined : Math.max(0, asInt(source.tick, 0));
+  const tick = source.tick === undefined ? undefined : Math.max(0, campfire ? asNumber(source.tick, 0) : asInt(source.tick, 0));
   const articulation = source.articulation === undefined ? undefined : normalisePocketAudioArticulation(source.articulation);
   const notes = Array.isArray(source.notes) ? source.notes.map((note) => asNumber(note, 0)) : undefined;
   return {
@@ -235,12 +238,12 @@ function normaliseRichEvent(value, context) {
     ...(step !== undefined ? { step } : {}),
     ...(tick !== undefined ? { tick } : {}),
     duration: Math.max(0.01, asNumber(source.duration, 1)),
-    ...(source.durationTicks === undefined ? {} : { durationTicks: Math.max(1, asInt(source.durationTicks, 1)) }),
+    ...(source.durationTicks === undefined ? {} : { durationTicks: Math.max(1, campfire ? asNumber(source.durationTicks, 1) : asInt(source.durationTicks, 1)) }),
     ...(source.note === undefined ? {} : { note: asNumber(source.note, 0) }),
     ...(notes ? { notes } : {}),
     velocity: clamp(asNumber(source.velocity, 100), 0, 127),
     ...(articulation ? { articulation } : {}),
-    ...(source.sound === undefined ? {} : { sound: String(source.sound) }),
+    ...(sound === undefined ? {} : { sound: String(sound) }),
     ...(source.lane === undefined ? {} : { lane: String(source.lane) }),
     role: normalisePocketAudioRole(source.role),
     expression: normalisePocketAudioExpression(source.expression),

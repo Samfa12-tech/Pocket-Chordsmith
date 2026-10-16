@@ -4,11 +4,13 @@ import { buildMetronomeClicks } from "../audio/metronome";
 import { chordsmithSidechainSettings } from "../audio/sidechain";
 import { activeTrackSendRoutes } from "../daw/routing";
 import { getAutomatedFxChains, getAutomatedTrackControls, getProjectAutomationLane } from "../daw/automation";
-import { timelineBarAtSeconds, timelineDurationSeconds, timelineMetricsAtSortedBars, timelineSecondsAtBar } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineDurationSeconds, nativeTransportMap, timelineSecondsAtBar } from "../daw/timeline";
 import { trackIsAudible } from "../daw/tracks";
 import { validHostedStateSnapshot } from "../daw/hostedPlugins";
 
 export interface NativeAudioStatus {
+  startupTimings?: { stopMs: number; deviceMs: number; playbackBuildMs: number; streamBuildMs: number; workerStartMs: number; streamPlayMs: number; totalMs: number };
+  monitorComparisonVersion?: number;
   backend: "native-cpal" | string;
   available: boolean;
   active: boolean;
@@ -88,6 +90,7 @@ export interface NativeAudioEvent {
   detuneCents?: number;
   midiNotes: number[];
   velocity: number;
+  clipGain?: number;
   step?: number;
   pan?: number;
   instrument?: string;
@@ -229,6 +232,8 @@ export interface NativeAudioRegion {
   startTime: number;
   sourceOffset: number;
   duration: number;
+  /** Musical body of a generated cache region; trailing PCM is not body overlap. */
+  generatedBodyDurationSeconds?: number;
   gain: number;
   phaseMultiplier?: number;
   reversed?: boolean;
@@ -243,6 +248,9 @@ export interface NativeAudioStartPayload {
   projectTitle: string;
   sampleRate: number;
   startSeconds: number;
+  /** Monitor-only range; never stored in a project or exported processing. */
+  audition?: { endSeconds: number };
+  monitorComparison?: { aTrackId: string; bTrackId: string; aGain: number; bGain: number; side: "a" | "b" };
   bpm: number;
   timeSig: number;
   transportMap?: NativeAudioTransportPoint[];
@@ -317,25 +325,62 @@ export interface NativeAudioStartResult {
 
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
 
+export interface NativeStartupTimings {
+  preload: { elapsedMs: number; invokeMs: number; sentAssetCount: number; sentByteCount: number; residentHitCount: number } | null;
+  start: { elapsedMs: number; invokeMs: number; sentByteCount: number; outcome: string } | null;
+}
+
 export class NativeAudioPlaybackBridge {
+  private monitorSequence = 0;
   private readonly knownNativeAssetRevisions = new Set<string>();
+  private assetResidencyGeneration = 0;
+  private playbackRequest = 0;
+  private startupTimings: NativeStartupTimings = { preload: null, start: null };
+
+  getStartupTimings(): NativeStartupTimings {
+    return { preload: this.startupTimings.preload && { ...this.startupTimings.preload },
+      start: this.startupTimings.start && { ...this.startupTimings.start } };
+  }
 
   constructor(private readonly apiFactory: NativeAudioApiFactory = defaultNativeAudioApi) {}
 
   async start(payload: NativeAudioStartPayload): Promise<NativeAudioStartResult> {
+    const began = performance.now();
+    const timing = { elapsedMs: 0, invokeMs: 0, sentByteCount: 0, outcome: "pending" };
+    this.startupTimings.start = timing;
+    const finish = (result: NativeAudioStartResult) => {
+      timing.elapsedMs = performance.now() - began;
+      timing.outcome = result.started ? "started" : result.unavailable ? "unavailable" : "failed-or-cancelled";
+      return result;
+    };
+    const request = ++this.playbackRequest;
+    const isCurrent = () => request === this.playbackRequest;
+    const cancelled = (): NativeAudioStartResult => finish({ started: false, status: null, error: "Native audio start was superseded." });
+    const residencyGeneration = this.assetResidencyGeneration;
     const api = await this.apiFactory();
+    if (!isCurrent()) return cancelled();
     if (!api?.isAvailable()) {
-      return { started: false, status: null, error: "Native Tauri audio runtime is unavailable.", unavailable: true };
+      return finish({ started: false, status: null, error: "Native Tauri audio runtime is unavailable.", unavailable: true });
     }
+    const invokeStart = async (sent: NativeAudioStartPayload) => {
+      const invoked = performance.now();
+      timing.sentByteCount += sent.assets?.reduce((sum, asset) => sum + (asset.bytes?.length || 0), 0) || 0;
+      try { return await api.invoke<NativeAudioStatus>("native_audio_start", { payload: sent }); }
+      finally { timing.invokeMs += performance.now() - invoked; }
+    };
     try {
-      const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload: this.withCachedAssetHints(payload) });
-      payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
-      return { started: true, status, error: null };
+      const status = await invokeStart(this.withCachedAssetHints(payload));
+      if (!isCurrent()) return cancelled();
+      if (residencyGeneration === this.assetResidencyGeneration) {
+        payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
+      }
+      return finish({ started: true, status, error: null });
     } catch (error) {
+      if (!isCurrent()) return cancelled();
       const message = errorMessage(error);
       const missingAsset = payload.assets?.find((asset) => message === missingNativeAssetError(asset.id));
       if (!missingAsset?.bytes?.length) {
-        return { started: false, status: null, error: message };
+        return finish({ started: false, status: null, error: message });
       }
 
       // The native cache is bounded and may have evicted an asset that this
@@ -344,66 +389,114 @@ export class NativeAudioPlaybackBridge {
       this.knownNativeAssetRevisions.delete(nativeAssetCacheHintKey(missingAsset));
       const missingAssetKey = nativeAssetCacheHintKey(missingAsset);
       try {
-        const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload });
-        payload.assets?.forEach((asset) => {
+        if (!isCurrent()) return cancelled();
+        const status = await invokeStart(payload);
+        if (!isCurrent()) return cancelled();
+        if (residencyGeneration === this.assetResidencyGeneration) payload.assets?.forEach((asset) => {
           const cacheHintKey = nativeAssetCacheHintKey(asset);
           if (cacheHintKey !== missingAssetKey) this.knownNativeAssetRevisions.add(cacheHintKey);
         });
-        return { started: true, status, error: null };
+        return finish({ started: true, status, error: null });
       } catch (retryError) {
-        return { started: false, status: null, error: errorMessage(retryError) };
+        if (!isCurrent()) return cancelled();
+        return finish({ started: false, status: null, error: errorMessage(retryError) });
       }
     }
   }
 
   async preloadAssets(assets: NativeAudioAsset[]): Promise<number> {
+    const began = performance.now();
+    const timing = { elapsedMs: 0, invokeMs: 0, sentAssetCount: 0, sentByteCount: 0, residentHitCount: 0 };
+    this.startupTimings.preload = timing;
+    const residencyGeneration = this.assetResidencyGeneration;
     const api = await this.apiFactory();
-    if (!api?.isAvailable()) return 0;
+    if (!api?.isAvailable()) { timing.elapsedMs = performance.now() - began; return 0; }
     let loaded = 0;
     for (const asset of assets) {
       const cacheHintKey = nativeAssetCacheHintKey(asset);
       if (this.knownNativeAssetRevisions.has(cacheHintKey)) {
+        timing.residentHitCount += 1;
         loaded += 1;
         continue;
       }
       if (!asset.bytes?.length && !asset.sourcePath) continue;
+      const invoked = performance.now();
       try {
+        timing.sentAssetCount += 1;
+        timing.sentByteCount += asset.bytes?.length || 0;
         await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
-        this.knownNativeAssetRevisions.add(cacheHintKey);
+        if (residencyGeneration === this.assetResidencyGeneration) this.knownNativeAssetRevisions.add(cacheHintKey);
         loaded += 1;
       } catch {
         // Playback can still send bytes for assets that fail to preload.
+      } finally {
+        timing.invokeMs += performance.now() - invoked;
       }
     }
+    timing.elapsedMs = performance.now() - began;
     return loaded;
   }
 
   async pause(): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_pause");
+    return this.invokeIfAvailable("native_audio_pause", undefined, ++this.playbackRequest);
   }
 
   async resume(): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_resume");
+    return this.invokeIfAvailable("native_audio_resume", undefined, ++this.playbackRequest);
   }
 
-  async stop(): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_stop");
+  async stop(options: { retainDecodedAssets?: boolean } = {}): Promise<NativeAudioStatus | null> {
+    const request = ++this.playbackRequest;
+    const retained = options.retainDecodedAssets ? new Set(this.knownNativeAssetRevisions) : null;
+    // Cancel old acknowledgments even when retaining the bounded native cache.
+    // Restore only previously proven hints after this exact Stop is acknowledged.
+    this.invalidateAssetResidency();
+    const generation = this.assetResidencyGeneration;
+    try {
+      const status = await this.invokeIfAvailable("native_audio_stop",
+        options.retainDecodedAssets ? { retainDecodedAssets: true } : undefined, request);
+      if (retained && status && (status.decodedAssetCacheBytes || 0) > 0
+        && request === this.playbackRequest && generation === this.assetResidencyGeneration) {
+        for (const key of retained) this.knownNativeAssetRevisions.add(key);
+        return status;
+      }
+      this.invalidateAssetResidency();
+      return status;
+    } catch (error) {
+      this.invalidateAssetResidency();
+      throw error;
+    }
+  }
+
+  private invalidateAssetResidency(): void {
+    this.assetResidencyGeneration += 1;
+    this.knownNativeAssetRevisions.clear();
   }
 
   async seek(seconds: number): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_seek", { seconds });
+    return this.invokeIfAvailable("native_audio_seek", { seconds }, ++this.playbackRequest);
   }
 
   async updateTrack(patch: NativeAudioTrackPatch): Promise<NativeAudioStatus | null> {
     return this.invokeIfAvailable("native_audio_update_track", { patch });
   }
 
+  async compareMonitor(side: "a" | "b", expectedGeneration: number): Promise<NativeAudioStatus | null> {
+    const sequence = ++this.monitorSequence;
+    const request = this.playbackRequest;
+    const api = await this.apiFactory();
+    if (request !== this.playbackRequest || sequence !== this.monitorSequence || !api?.isAvailable()) return null;
+    try { return await api.invoke<NativeAudioStatus>("native_audio_compare_monitor", { side, expectedGeneration, sequence }); }
+    catch { return null; }
+  }
+
   async status(): Promise<NativeAudioStatus | null> {
     return this.invokeIfAvailable("native_audio_status");
   }
 
-  private async invokeIfAvailable(command: string, args?: Record<string, unknown>): Promise<NativeAudioStatus | null> {
+  private async invokeIfAvailable(command: string, args?: Record<string, unknown>, request?: number): Promise<NativeAudioStatus | null> {
     const api = await this.apiFactory();
+    if (request !== undefined && request !== this.playbackRequest) return null;
     if (!api?.isAvailable()) return null;
     try {
       return await api.invoke<NativeAudioStatus>(command, args);
@@ -477,6 +570,7 @@ export function buildNativeAudioStartPayload(
       slideOffset: event.slideOffset,
       detuneCents: event.detuneCents,
       midiNotes: event.midiNotes || [],
+      ...(typeof event.clipGain === "number" ? {clipGain:event.clipGain} : {}),
       velocity: clamp(event.velocity, 0, 1.4),
       step: event.step,
       pan: event.pan,
@@ -506,32 +600,6 @@ export function buildNativeAudioStartPayload(
     samplers: nativeSamplerDevices(project, cache?.assets || []),
     hostedInstruments: nativeHostedInstruments(project)
   };
-}
-
-function nativeTransportMap(project: PocketDawProject): NativeAudioTransportPoint[] {
-  const endBar = Math.max(2, project.timeline.bars + 2);
-  const step = Math.max(0.25, (endBar - 1) / 16_000);
-  const bars = new Set<number>([1, endBar]);
-  for (let bar = 1; bar < endBar; bar += step) bars.add(Math.min(endBar, Math.round(bar * 1_000_000) / 1_000_000));
-  const tempoLane = getProjectAutomationLane(project, "tempo");
-  tempoLane?.points.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
-  project.project.meterMap?.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
-  const sortedBars = [...bars].sort((a, b) => a - b);
-  const metricBars = [...new Set(sortedBars.flatMap((bar) => [bar, Math.max(1, Math.floor(bar + 0.000001))]))].sort((a, b) => a - b);
-  const metrics = new Map(timelineMetricsAtSortedBars(project, metricBars).map((metric) => [metric.bar, metric]));
-  return sortedBars.map((bar) => {
-    const metric = metrics.get(bar)!;
-    const barStart = metrics.get(Math.max(1, Math.floor(bar + 0.000001)))!;
-    return {
-      timeSeconds: metric.timeSeconds,
-      projectPpq: metric.projectPpq,
-      barPositionPpq: barStart.projectPpq,
-      tempo: metric.tempo,
-      numerator: metric.meter.numerator,
-      denominator: metric.meter.denominator,
-      curve: metric.curve
-    };
-  }).filter((point, index, points) => index === 0 || point.timeSeconds > points[index - 1]!.timeSeconds + 0.0000001);
 }
 
 function nativeSamplerDevices(project: PocketDawProject, assets: NativeAudioAsset[]): NativeSamplerDevice[] {

@@ -10,16 +10,20 @@ describe("native audio renderer cache contract", () => {
     expect(command).toContain("tauri::async_runtime::spawn_blocking(move ||");
     expect(command).toContain("render_native_audio_wav_on_worker(");
     const worker = sourceSection(source, "fn render_native_audio_wav_on_worker", "pub fn native_audio_pause");
-    expect(worker.indexOf("drop(runtime)")).toBeLessThan(worker.indexOf("render_playback_to_wav("));
+    expect(worker.indexOf("drop(runtime)")).toBeLessThan(worker.indexOf("render_playback_to_wav_cancellable("));
   });
   it("changes when native cached/procedural parity-sensitive renderer code changes", () => {
     const nativeAudio = readFileSync(join(process.cwd(), "src-tauri", "src", "native_audio.rs"), "utf8");
     const vst3Session = readFileSync(join(process.cwd(), "src-tauri", "src", "vst3_session.rs"), "utf8");
+    const campfire = readFileSync(join(process.cwd(), "src-tauri", "src", "campfire_acoustic.rs"), "utf8");
     const hash = hashString([
       sourceLine(nativeAudio, /^const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK:.*$/m),
+      sourceSection(nativeAudio, "fn sanitize_offline_bit_depth", "fn preferred_output_config"),
       sourceSection(nativeAudio, "fn render_generated_event_source", "fn sanitize_loop_region"),
       sourceSection(nativeAudio, "fn render_region_sample", "fn validate_asset"),
       sourceSection(nativeAudio, "fn render_event_sample", "impl EventSeed for NativeRenderedEvent"),
+      sourceSection(nativeAudio, "fn render_playback_to_wav", "fn prune_cache_stem_events"),
+      sourceSection(campfire, "use std::collections::HashMap;", "#[cfg(test)]"),
       sourceSection(nativeAudio, "fn render_hosted_instruments", "fn render_next_cache_stem_frame"),
       sourceSection(nativeAudio, "impl HostedEffectState", "fn hosted_deadline_micros"),
       sourceSection(nativeAudio, "impl NativeFxRuntime", "impl NativeFxChainState"),

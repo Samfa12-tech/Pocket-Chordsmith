@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Pocket DJ" />
-<title>Pocket DJ v1g Core Bridge</title>
+<title>Pocket DJ v1i Core Bridge</title>
 <style>
   :root{
     --bg:#070711;
@@ -167,6 +167,19 @@
         </div>
         <div class="section">
           <div class="pad-grid" id="sectionPads"></div>
+          <div id="djAuditionControls" style="margin-top:14px;display:grid;gap:10px">
+            <div class="row"><button class="btn" id="hearDjBitBtn">Hear this bit</button><button class="btn" id="stopDjBitBtn" disabled>Stop audition</button></div>
+            <div class="small" id="djAuditionRange"></div>
+            <details><summary style="min-height:44px;padding:12px 0;cursor:pointer">Passage and listening cue</summary>
+              <div class="row">
+                <label class="small">Bar <select class="select" id="djAuditionBar" aria-label="Audition bar"></select></label>
+                <label class="small">Lead-in <select class="select" id="djAuditionLead"><option value="0">None</option><option value="1" selected>1 bar</option><option value="2">2 bars</option></select></label>
+                <label class="small">Tail <select class="select" id="djAuditionTail"><option value="0.5">0.5 s</option><option value="1" selected>1 s</option><option value="2">2 s</option></select></label>
+              </div>
+              <p class="small">Listen for bass and drums meeting the chord, and room for the melody. This is guidance, not an automatic finding. Adjust a stem or FX manually; use Play for held notes from earlier bars. Active builds and drops need ordinary Play.</p>
+            </details>
+            <div class="small" id="djAuditionStatus" role="status" aria-live="polite">Choose a bar in the current section. Nothing plays automatically.</div>
+          </div>
         </div>
         <div class="section sequence-panel">
           <div class="toolbar">
@@ -295,7 +308,7 @@ const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
 const HANDOFF_TO_CHORDSMITH_KEY = "pocket_dj_to_chordsmith_handoff_v1";
 const POCKET_DJ_VERSION = 1;
 const PROJECT_SCHEMA_VERSION = 17;
-const POCKET_AUDIO_CORE_VERSION = "0.2.0";
+const POCKET_AUDIO_CORE_VERSION = "0.3.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17 (16 compatible)";
 const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
   "../../packages/pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
@@ -366,7 +379,7 @@ const POCKET_DJ_CAPABILITIES = Object.freeze({
   profiles:Object.keys(PROFILE_DEFAULT_PRESETS),
   articulations:SUPPORTED_ARTICULATIONS.slice(),
   drumLanes:SUPPORTED_DRUM_LANES.slice(),
-  techniques:{chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
+  techniques:{campfire:["recipeVersion","seed","strumSeconds","tailPolicy"],chip:["channel","duty","envelope","sweep","arpeggio","noisePeriod","wavetable","retrigger","pitchSlide","vibrato"],metal:["palmMute","pickDirection","tremoloRate","string","dualTakeSeed"],western:["pickDirection","strumDirection","banjoRoll","bowDirection","breathDirection","bendIntent"],funk:["hand","rake","ghostDepth","pocketOffset","callResponse"]}
 });
 const METAL_STYLE_PRESETS = ["metal_classic_chug","metal_thrashing_gallop","metal_doom_procession","metal_power_anthem","metal_boss_blast","metal_breakdown_gate"];
 const METAL_CHORD_INSTRUMENTS = ["metal_power_stack","dark_organ_stack"];
@@ -902,6 +915,11 @@ function capabilityReportForProject(project){
       });
     });
   });
+  if(pocketDjProjectHasCampfire(project) && pocketAudioCoreModule?.createPocketAudioRendererCapabilityReport){
+    const normalized = pocketAudioCoreModule.normalisePocketChordsmithProject(project);
+    const report = pocketAudioCoreModule.createPocketAudioRendererCapabilityReport(normalized,{renderer:"live"});
+    report.losses.filter(loss => loss.feature.startsWith("campfire-")).forEach(addLoss);
+  }
   return {consumer:POCKET_DJ_CAPABILITIES.consumer,schemaVersions:POCKET_DJ_CAPABILITIES.schemaVersions.slice(),supportedFeatures:POCKET_DJ_CAPABILITIES.features.slice(),requestedFeatures,supportedProfiles:POCKET_DJ_CAPABILITIES.profiles.slice(),lossReport};
 }
 function negotiatePocketDjCapabilities(request={}){
@@ -1050,6 +1068,7 @@ function sanitizeSection(raw, project, id){
     bassSlide: fitArray(raw[sectionKey("bassSlide", id)], len, false, normalizeBool),
     bassAccent: fitArray(raw[sectionKey("bassAccent", id)], len, false, normalizeBool),
     guitarPattern,
+    guitarPerformance:safeChoice(raw[sectionKey("guitarPerformance",id)],["grid","strum_pick"],"grid"),
     tracks: cloneJson(richSource.tracks || {}),
     richTracks
   };
@@ -1149,8 +1168,8 @@ function sanitizePocketChordsmithProject(raw){
     chordOctave: clamp(asInt(raw.chordOctave,0),-1,1),
     melodyPitchMode: safeChoice(raw.melodyPitchMode,["scale","chromatic"],"scale"),
     bassMode: safeChoice(raw.bassMode,["auto","manual"],"auto"),
-    guitarEnabled: !!raw.guitarEnabled,
-    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
+    guitarEnabled: raw.guitarEnabled === undefined ? pocketDjProjectHasCampfire(raw) : !!raw.guitarEnabled,
+    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang","funk_muted","campfire_acoustic"],audioProfile === WESTERN_AUDIO_PROFILE_ID ? "western_twang" : "high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister,["low","mid","high"],"low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode,["down","up","alternate"],"down"),
     guitarVolume: clamp(asNum(raw.guitarVolume,.66),0,1),
@@ -1170,7 +1189,7 @@ function sanitizePocketChordsmithProject(raw){
   if(audioProfile === WESTERN_AUDIO_PROFILE_ID){
     project.chordInstrument = safeChoice(raw.chordInstrument,pocketChordInstrumentIds(),"saloon_piano");
     project.chordPlayMode = safeChoice(raw.chordPlayMode,["block","strum_up","strum_down","arp_up","arp_down"],"strum_up");
-    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang"],"western_twang");
+    project.guitarTone = safeChoice(raw.guitarTone,["clean","crunch","western_twang","campfire_acoustic"],"western_twang");
   }
   if(audioProfile === FUNK_AUDIO_PROFILE_ID){
     project.bassTone = safeChoice(raw.bassTone,pocketBassToneIds(),"funk_finger_pocket");
@@ -1190,7 +1209,7 @@ function sanitizePocketChordsmithProject(raw){
 function createDjSessionFromChordsmithProject(project, originalProject=project?._originalProject || project){
   const activeIds = SECTION_IDS.filter(id => project.sections[id] && project.sections[id].active);
   const first = activeIds[0] || "A";
-  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern));
+  const guitarActive = project.guitarEnabled && SECTION_IDS.some(id => guitarHasPattern(project.sections[id].guitarPattern) || (project.guitarTone === "campfire_acoustic" && project.sections[id].guitarPerformance === "strum_pick") || pocketDjProjectHasCampfire({sections:{[id]:project.sections[id]}}));
   const sequence = sanitizeDjSequence(project.songSequence, project.sections);
   const sequenceStart = Math.max(0, sequence.indexOf(first));
   return {
@@ -1558,6 +1577,7 @@ function playOsc(stem,midi,t,dur,wave="sawtooth",peak=.2,filterType=null,filterF
 }
 function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,filterFreq=1500,pan=0){
   if(!audioCtx) return;
+  if(stem === "bass") dur=djAuditionDuration(t,dur);
   const params = activeSoundParameters();
   if(isChipDeck() && params.enabled !== false){
     const recipe = pocketDjPlaybackRecipeProbe(CHIP_AUDIO_PROFILE_ID,params);
@@ -1576,7 +1596,7 @@ function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,fil
   }
   connectWithPan(node, stemOutput(stem), pan, t);
   envGain(g,t,.01,.06,.7,.20,peak,dur);
-  osc.start(t); osc.stop(t + dur + .25);
+  startDjVoice(osc,t,t + dur + .25);
 }
 function playKick(t, peak=0.95){
   const kit = lofiDrumKit();
@@ -1593,7 +1613,7 @@ function playKick(t, peak=0.95){
   }
   g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
   g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
-  node.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+cfg.length); flashStem("drums");
+  node.connect(g); g.connect(stemOutput("drums")); startDjVoice(osc,t,t+cfg.length); flashStem("drums");
 }
 function playSnare(t, peak=0.5){
   const kit = lofiDrumKit();
@@ -1609,14 +1629,14 @@ function playSnare(t, peak=0.5){
   }
   g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
   g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
-  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+cfg.length);
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+cfg.length);
   if(cfg.bodyFreq){
     const body = audioCtx.createOscillator(), bodyGain = audioCtx.createGain();
     body.type = "triangle";
     body.frequency.setValueAtTime(cfg.bodyFreq,t);
     bodyGain.gain.setValueAtTime(cfg.bodyGain,t);
     bodyGain.gain.exponentialRampToValueAtTime(.001,t+cfg.bodyRampSeconds);
-    body.connect(bodyGain); bodyGain.connect(stemOutput("drums")); body.start(t); body.stop(t+cfg.bodyLength);
+    body.connect(bodyGain); bodyGain.connect(stemOutput("drums")); startDjVoice(body,t,t+cfg.bodyLength);
   }
   flashStem("drums");
 }
@@ -1635,7 +1655,7 @@ function playHat(t, peak=0.16, open=false){
   }
   g.gain.setValueAtTime(Math.max(open ? cfg.gainFloorOpen : cfg.gainFloorClosed, peak * (open ? cfg.gainScaleOpen : cfg.gainScaleClosed)),t);
   g.gain.exponentialRampToValueAtTime(.001,t + (open ? cfg.rampSecondsOpen : cfg.rampSecondsClosed));
-  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+hatLen); flashStem("drums");
 }
 function playFunkTransient(t, peak=.12, bright=false){
   if(!audioCtx) return;
@@ -1644,7 +1664,7 @@ function playFunkTransient(t, peak=.12, bright=false){
   src.buffer = liveNoiseBuffer(`funk_transient_${bright ? "bright" : "body"}_${Math.round(peak*100)}`,length,true);
   filter.type = bright ? "bandpass" : "lowpass"; filter.frequency.value = bright ? 2200 : 760; filter.Q.value = bright ? 1.1 : .7;
   gain.gain.setValueAtTime(.0001,t); gain.gain.linearRampToValueAtTime(Math.max(.0001,peak),t+.002); gain.gain.exponentialRampToValueAtTime(.0001,t+length);
-  src.connect(filter); filter.connect(gain); gain.connect(stemOutput("bass")); src.start(t); src.stop(t+length+.01);
+  src.connect(filter); filter.connect(gain); gain.connect(stemOutput("bass")); startDjVoice(src,t,t+length+.01);
 }
 function playBassExpressive(midi,t,dur=.22,peak=.34,articulation="finger",event={}){
   const art = String(articulation || "finger").toLowerCase();
@@ -1685,14 +1705,14 @@ function playLofiTexture(t, step=0){
     hp.type = "highpass"; hp.frequency.value = 520;
     lp.type = "lowpass"; lp.frequency.value = 3600 - age * 1800;
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.0055*hiss,t+.018); g.gain.exponentialRampToValueAtTime(.0001,t+.2);
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.22);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+.22);
   }
   if(crackle > .01 && featureSeed(step,43) < crackle * .7){
     const src = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
     src.buffer = liveNoiseBuffer(`lofi_crackle_${step % 19}`, .026, false);
     bp.type = "bandpass"; bp.frequency.value = 1550 + featureSeed(step,44) * 1300; bp.Q.value = .95;
     g.gain.setValueAtTime(.018*crackle,t); g.gain.exponentialRampToValueAtTime(.0001,t+.024);
-    src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.028);
+    src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); startDjVoice(src,t,t+.028);
   }
 }
 function playCrash(t){ playHat(t,1.55,true); }
@@ -1726,11 +1746,13 @@ function playBass(midi,t,dur=.22,peak=.34,accent=false,toneOverride=null){
   flashStem("bass");
 }
 function playBassPhrase(midi,t,dur=.22,peak=.34,accent=false,slideMidi=null,slideOffset=null){
+  if(djAudition && slideOffset>=djAuditionDuration(t,Infinity))slideMidi=null;
   if(slideMidi === null || slideOffset === null){
     playBass(midi,t,dur,peak,accent);
     return;
   }
   const cfg = bassToneConfig();
+  dur=djAuditionDuration(t,dur);
   const endAt = t + Math.max(.08,dur) + .22;
   const slideAt = Math.max(t + .02, t + slideOffset);
   const makeVoice = (startMidi,targetMidi,wave,peakMul,cutoff) => {
@@ -1741,7 +1763,7 @@ function playBassPhrase(midi,t,dur=.22,peak=.34,accent=false,slideMidi=null,slid
     f.type = "lowpass"; f.frequency.setValueAtTime(cutoff, t);
     osc.connect(f); f.connect(g); g.connect(stemOutput("bass"));
     envGain(g,t,.01,.06,.7,.20,peak*peakMul*(accent ? 1.18 : 1),dur);
-    osc.start(t); osc.stop(endAt);
+    startDjVoice(osc,t,endAt);
   };
   makeVoice(midi,slideMidi,cfg.mainWave,cfg.mainPeak,accent ? cfg.cutoff * 1.18 : cfg.cutoff);
   makeVoice(midi-12,slideMidi-12,cfg.subWave,cfg.subPeak,cfg.subCutoff);
@@ -1804,7 +1826,7 @@ function playChordTone(freq,t,dur,type,peak,filterType,filterFreq,cfg={},pan=0){
     osc.detune.setValueAtTime(layer.detune ?? 0, t);
     layerGain.gain.setValueAtTime(layer.level ?? 1, t);
     osc.connect(layerGain); layerGain.connect(gain);
-    osc.start(t); osc.stop(stopAt);
+    startDjVoice(osc,t,stopAt);
   });
 }
 function chordInstrumentConfig(name){
@@ -1931,7 +1953,7 @@ function playGuitar(notes,t,dur,art="open",step=0){
     const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), bp = audioCtx.createBiquadFilter();
     src.buffer = liveNoiseBuffer(`guitar_scratch_${playDur}`, playDur, true); bp.type = "bandpass"; bp.frequency.value = 1450; bp.Q.value = .9;
     g.gain.setValueAtTime(.001,t); g.gain.linearRampToValueAtTime(.11,t+.004); g.gain.exponentialRampToValueAtTime(.001,t+playDur);
-    src.connect(bp); bp.connect(g); g.connect(bus); src.start(t); src.stop(t+playDur+.02); flashStem("guitar"); return;
+    src.connect(bp); bp.connect(g); g.connect(bus); startDjVoice(src,t,t+playDur+.02); flashStem("guitar"); return;
   }
   ordered.forEach((midi,i) => {
     const start = t + i * spread;
@@ -1947,7 +1969,7 @@ function playGuitar(notes,t,dur,art="open",step=0){
     g.gain.exponentialRampToValueAtTime(Math.max(.0001, peak*(isChug ? .10 : .52)), start + Math.max(.025, playDur*(isChug ? .45 : .35)));
     g.gain.exponentialRampToValueAtTime(.0001,start+playDur+(isChug ? .035 : .18));
     oscA.connect(g); oscB.connect(g); g.connect(bus);
-    oscA.start(start); oscB.start(start); oscA.stop(start+playDur+.22); oscB.stop(start+playDur+.22);
+    startDjVoice(oscA,start,start+playDur+.22); startDjVoice(oscB,start,start+playDur+.22);
   });
   flashStem("guitar");
 }
@@ -1964,7 +1986,7 @@ function effectiveStemGain(stem){
   const perf = session.performance;
   const muted = !!perf.stemMutes[stem] || (stem === "bass" && !!perf.funkMacros?.bassMute);
   const scale = clamp(asNum(state.performanceStemScales?.[stem], 1), 0, 1.4);
-  let gain = muted ? 0 : clamp(asNum(perf.stemVolumes[stem],.8),0,1) * scale;
+  let gain = muted ? 0 : clamp(asNum(stem === "bass" ? comparisonBassVolume(perf.stemVolumes[stem]) : perf.stemVolumes[stem],.8),0,1) * scale;
   if(stem === "guitar" && !session.deck.guitarActive) gain = 0;
   return gain;
 }
@@ -2015,6 +2037,93 @@ function applyMixerAndFx(){
 }
 
 /* 6. Scheduler */
+
+let pocketDjCampfireBank = null;
+let pocketDjCampfirePlan = null;
+let pocketDjCampfirePreparation = null;
+let pocketDjPlaybackRequest = 0;
+
+function pocketDjProjectHasCampfire(project){
+  return project?.guitarTone === "campfire_acoustic" || Object.values(project?.sections || {}).some(section =>
+    Object.entries(section?.tracks || {}).some(([id,track]) => String(track?.stem || track?.role || id || "").toLowerCase() === "guitar" &&
+      track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
+}
+
+async function preparePocketDjCampfire(request, activeSession){
+  pocketDjCampfirePreparation?.abort();
+  const source = activeSession.source.originalProject || activeSession.source.project;
+  if(!pocketDjProjectHasCampfire(source)){
+    pocketDjCampfireBank?.dispose();
+    pocketDjCampfireBank = null;
+    pocketDjCampfirePlan = null;
+    return true;
+  }
+  if(pocketDjCampfirePlan?.session === activeSession && pocketDjCampfireBank) return true;
+  const controller = new AbortController();
+  pocketDjCampfirePreparation = controller;
+  let bank = null;
+  try{
+    const core = await loadPocketAudioCoreModule();
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession) return false;
+    if(typeof core.prepareCampfireAcousticNoteBank !== "function") throw new Error("Campfire Acoustic needs the current bundled Pocket Audio Core. Your song is unchanged.");
+    const input = {...source,bpm:activeSession.deck.bpm,key:activeSession.deck.key,scale:activeSession.deck.scale};
+    const project = core.normalisePocketChordsmithProject(input);
+    const sections = new Map();
+    const events = [];
+    const warnings = new Set();
+    for(const id of SECTION_IDS){
+      const timeline = core.buildPocketAudioTimeline(project,{scope:"section",sectionId:id});
+      const guitar = timeline.events.filter(event => event.type === "guitar");
+      const prepared = guitar.filter(event => event.instrument === "campfire_acoustic");
+      const owned = prepared.length > 0 || project.sections[id].guitar.tone === "campfire_acoustic";
+      if(owned && guitar.some(event => event.instrument !== "campfire_acoustic")) throw new Error("This section mixes Campfire and amplifier guitar. Separate the guitar parts before live DJ playback; the original source is preserved.");
+      const stepTimes = core.buildStepTimeline({stepCount:project.sections[id].bars * project.meta.timeSig * project.meta.resolution,...project.meta}).times;
+      const byStep = new Map();
+      for(const event of prepared){
+        const step = Math.floor(event.step);
+        if(!byStep.has(step)) byStep.set(step,[]);
+        byStep.get(step).push({event,offset:event.time - stepTimes[step]});
+        events.push(event);
+      }
+      sections.set(id,{owned,byStep,events:prepared});
+      timeline.lossReport.filter(loss => loss.feature?.startsWith("campfire-")).forEach(loss => warnings.add(loss.message));
+    }
+    bank = await core.prepareCampfireAcousticNoteBank(audioCtx,events,{destination:stemGains.guitar,signal:controller.signal});
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession){bank.dispose();return false;}
+    pocketDjCampfireBank?.dispose();
+    pocketDjCampfireBank = bank;
+    pocketDjCampfirePlan = {session:activeSession,sections,warnings:[...warnings]};
+    return true;
+  }catch(error){
+    if(controller.signal.aborted || request !== pocketDjPlaybackRequest || session !== activeSession){bank?.dispose();return false;}
+    throw error;
+  }finally{
+    if(pocketDjCampfirePreparation === controller) pocketDjCampfirePreparation = null;
+  }
+}
+
+function schedulePocketDjCampfireStep(section,step,time){
+  const prepared = pocketDjCampfirePlan?.sections.get(section.id);
+  if(!prepared?.owned) return false;
+  if(session.deck.guitarActive) for(const item of prepared.byStep.get(step) || []) pocketDjCampfireBank.schedule(item.event,time + item.offset);
+  return true;
+}
+
+function stopPocketDjCampfire(){
+  pocketDjPlaybackRequest++;
+  pocketDjCampfirePreparation?.abort();
+  pocketDjCampfirePreparation = null;
+  pocketDjCampfireBank?.stopAll();
+}
+
+function adoptPocketDjSession(nextSession){
+  if(state.playing || djAudition) stopPlayback();
+  else stopPocketDjCampfire();
+  pocketDjCampfireBank?.dispose();
+  pocketDjCampfireBank = null;
+  pocketDjCampfirePlan = null;
+  session = nextSession;
+}
 
 function getSection(id=state.currentSection){ return session?.sections[id] || session?.sections.A; }
 function currentChord(section, step){
@@ -2241,9 +2350,10 @@ function scheduleStep(section, step, time){
       }
     });
   }
-  const hasRichGuitar = richTrackHasEvents(section,"guitar");
+  const hasPreparedGuitar = schedulePocketDjCampfireStep(section,step,time);
+  const hasRichGuitar = !hasPreparedGuitar && richTrackHasEvents(section,"guitar");
   if(hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar) scheduleRichGuitarEvents(section,step,time,richEventBudget);
-  if(!hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
+  if(!hasPreparedGuitar && !hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
     const art = section.guitarPattern[step];
     if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time + humanizeOffset(step,17), guitarStepDuration(section,step,art), art, step);
   }
@@ -2277,11 +2387,20 @@ function scheduleUiAt(time, callback){
 }
 function schedulerTick(){
   if(!state.playing || !session || !audioCtx) return;
+  if(djAudition && (session!==djAudition.session || session.performance.currentSection!==djAudition.section)){
+    stopPlayback(); setDjAuditionStatus("Section changed. Hear this bit again."); return;
+  }
   const tickNow = audioCtx.currentTime;
+  if(djAudition && tickNow >= djAudition.endAudioTime){
+    stopPlayback();
+    setDjAuditionStatus("Audition complete. Audio quality not checked.");
+    return;
+  }
   let lastDroppedStep = null;
   let processedSteps = 0;
   if(nextEventTime < tickNow - MAX_AUDIBLE_LATENESS_SECONDS) schedulerDiagnostics.missedTickCount++;
   while(nextEventTime < tickNow + LOOKAHEAD_SECONDS){
+    if(djAudition && state.currentStepForSchedule >= djAudition.end) break;
     if(pocketDjSchedulerCatchupDecision(processedSteps,MAX_SCHEDULER_CATCHUP_STEPS) === "reset"){
       schedulerDiagnostics.catchupResetCount++;
       nextEventTime = tickNow;
@@ -2294,7 +2413,8 @@ function schedulerTick(){
     else if(policy === "drop") { schedulerDiagnostics.droppedStepCount++; lastDroppedStep = step; }
     else break;
     nextEventTime += stepDuration(step);
-    advanceStepAfterScheduling(section, step);
+    if(djAudition) state.currentStepForSchedule = step + 1;
+    else advanceStepAfterScheduling(section, step);
     processedSteps++;
   }
   if(lastDroppedStep !== null){
@@ -2383,28 +2503,47 @@ function advanceStepAfterScheduling(section, step){
 }
 
 /* 7. Section launcher */
-async function startPlayback(){
+async function startPlayback(audition=null){
   if(!session) return showStatus("Load a project first.");
+  if(!audition && djAudition) stopPlayback();
+  if(state.playing) pocketDjCampfireBank?.stopAll();
+  const request = ++pocketDjPlaybackRequest;
+  const activeSession = session;
   try{
-    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     await ensureAudio();
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(audition && !djAuditionIsCurrent(audition)) return;
+    if(!(await preparePocketDjCampfire(request,activeSession))) return;
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    if(audition && !djAuditionIsCurrent(audition)) return;
+    callPocketAudioCore("play", {sectionId: session.performance.currentSection, scope: "section"});
     if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume,.001 + audioCtx.currentTime,.018);
-  }catch(e){ showStatus("Audio needs one tap to start on this device. Press Play again."); return; }
+  }catch(e){
+    if(request !== pocketDjPlaybackRequest || session !== activeSession) return;
+    const message=e.message || "Audio needs one tap to start on this device. Press Play again.";
+    if(audition && djAudition === audition){ djAudition=null; renderDjAudition(); setDjAuditionStatus(message); }
+    showStatus(message); return;
+  }
   clearScheduler();
   state.playing = true;
   state.currentSection = session.performance.currentSection;
-  if(session.performance.sequencePlaying) currentSequencePosition();
-  state.currentStepForSchedule = 0;
+  if(!audition && session.performance.sequencePlaying) currentSequencePosition();
+  state.currentStepForSchedule = audition?.start || 0;
   state.currentStep = -1;
   state.bar = 1;
   state.beat = 1;
   nextEventTime = audioCtx.currentTime + .04;
+  if(audition) audition.endAudioTime=nextEventTime + spanDuration(audition.start,audition.end-audition.start) + audition.tail;
   applyMixerAndFx();
   schedulerId = setInterval(schedulerTick, SCHEDULER_MS);
   schedulerTick();
-  renderAll(); showStatus(`Playing section ${state.currentSection}`);
+  renderAll(); showStatus(`Playing section ${state.currentSection}${pocketDjCampfirePlan?.warnings.length ? ` · ${pocketDjCampfirePlan.warnings.join(" ")}` : ""}`);
+  if(audition) setDjAuditionStatus(`Playing ${audition.label}. Stop cancels.`);
 }
-function stopPlayback(){
+function stopPlayback(options={}){
+  const preservePerformance=!!djAudition || options?.preservePerformance === true;
+  djAudition=null;
+  stopPocketDjCampfire();
   callPocketAudioCore("stop");
   state.playing = false;
   clearScheduler();
@@ -2412,7 +2551,7 @@ function stopPlayback(){
   state.dropQueued = false;
   state.dropBoundaryScheduled = false;
   state.dropLanding = false;
-  if(session){
+  if(session && !preservePerformance){
     session.performance.buildActive = false;
     restoreBuildSnapshot();
     resetPerformanceStemScales(1);
@@ -2423,14 +2562,28 @@ function stopPlayback(){
   state.currentStep = -1;
   state.currentStepForSchedule = 0;
   applyMixerAndFx();
-  renderAll(); showStatus("Stopped");
+  if(preservePerformance){
+    releaseDjAuditionVoices();
+    if(masterGain && audioCtx){
+      const now=audioCtx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(masterGain.gain.value,now);
+      masterGain.gain.linearRampToValueAtTime(.0001,now+.01);
+    }
+    renderTransportState(); renderDjAudition();
+  }else renderAll();
+  showStatus("Stopped");
+  if(preservePerformance) setDjAuditionStatus("Stopped. Deck settings unchanged.");
 }
 function restartPlayback(){
   if(!session) return;
+  const wasPlaying = state.playing;
+  if(djAudition) stopPlayback();
+  else if(!wasPlaying) stopPocketDjCampfire();
   session.performance.currentSection = state.currentSection;
   state.currentStepForSchedule = 0;
   state.currentStep = -1;
-  if(state.playing){ startPlayback(); }
+  if(wasPlaying){ startPlayback(); }
   else { renderAll(); showStatus("Restart ready"); }
 }
 function clearScheduler(){
@@ -2701,6 +2854,139 @@ function resetFx(show=true){
 /* 10. UI renderer */
 const el = {};
 
+let djAudition=null;
+const djScheduledVoices=new Map();
+
+function startDjVoice(source,start,end){
+  djScheduledVoices.set(source,start);
+  source.addEventListener("ended",()=>djScheduledVoices.delete(source),{once:true});
+  source.start(start); source.stop(end);
+}
+function releaseDjAuditionVoices(){
+  for(const [source,start] of djScheduledVoices){try{source.stop(start>audioCtx.currentTime?audioCtx.currentTime:audioCtx.currentTime+.015);}catch{}}
+  djScheduledVoices.clear();
+}
+function djAuditionDuration(time,duration){
+  return djAudition?Math.min(duration,Math.max(.01,djAudition.endAudioTime-djAudition.tail-time)):duration;
+}
+
+function djAuditionPlan(){
+  if(!session) return null;
+  const section=session.performance.currentSection;
+  const bar=clamp(asInt(document.getElementById("djAuditionBar").value,0),0,getSection(section).bars-1);
+  const lead=clamp(asInt(document.getElementById("djAuditionLead").value,1),0,2);
+  const tail=clamp(asNum(document.getElementById("djAuditionTail").value,1),.5,2);
+  const start=Math.max(0,(bar-lead)*stepsPerBar());
+  const actualLead=(bar*stepsPerBar()-start)/stepsPerBar();
+  return {section,bar,start,end:(bar+1)*stepsPerBar(),tail,
+    label:`Section ${section}, bar ${bar+1} / ${actualLead} bar${actualLead===1?"":"s"} before / ${tail}s tail`};
+}
+function setDjAuditionStatus(message){
+  document.getElementById("djAuditionStatus").textContent=message;
+}
+function renderDjAudition(){
+  renderDjComparison();
+  if(!session) return;
+  const select=document.getElementById("djAuditionBar");
+  const count=getSection(session.performance.currentSection).bars;
+  if(select.options.length !== count){
+    const prior=select.value;
+    select.replaceChildren(...Array.from({length:count},(_,bar)=>new Option(String(bar+1),String(bar))));
+    select.value=String(Math.min(asInt(prior,0),count-1));
+  }
+  const plan=djAuditionPlan();
+  document.getElementById("djAuditionRange").textContent=plan.label;
+  document.getElementById("hearDjBitBtn").disabled=!!djAudition;
+  document.getElementById("stopDjBitBtn").disabled=!djAudition;
+}
+function djAuditionIsCurrent(context){
+  return djAudition===context && session===context.session && JSON.stringify(exportPocketDjSession(session))===context.source;
+}
+async function hearDjBit(compareBass=null){
+  if(!session || djAudition) return;
+  if(session.performance.buildActive || state.dropQueued || state.dropLanding || state.buildSavedFx || macroFrameId || session.performance.funkMacros?.phraseFill){
+    setDjAuditionStatus("Finish or reset the active build/drop/fill first; use Play to hear that performance.");
+    return;
+  }
+  stopPlayback({preservePerformance:true});
+  const context={...djAuditionPlan(),session,source:JSON.stringify(exportPocketDjSession(session)),endAudioTime:Infinity,compareBass:typeof compareBass==="number"?compareBass:null};
+  djAudition=context; renderDjAudition(); setDjAuditionStatus("Preparing. Stop cancels.");
+  await startPlayback(context);
+  if(djAudition===context && !state.playing){djAudition=null;renderDjAudition();setDjAuditionStatus("Passage changed. Hear this bit again.");}
+  return context;
+}
+function bindDjAudition(){
+  bindDjComparison();
+  document.getElementById("hearDjBitBtn").addEventListener("click",hearDjBit);
+  document.getElementById("stopDjBitBtn").addEventListener("click",stopPlayback);
+  for(const id of ["djAuditionBar","djAuditionLead","djAuditionTail"]){
+    document.getElementById(id).addEventListener("change",()=>{if(djAudition)stopPlayback();renderDjAudition();});
+  }
+  // Cancel before existing controls change the performance; keep those controls' actions intact.
+  const cancelForControl=event=>{
+    if(!djAudition || !event.target.closest?.("button,input,select,textarea,a")) return;
+    if(event.target.closest("#djAuditionControls,#djComparison,#playBtn,#stopBtn,#restartBtn")) return;
+    stopPlayback();
+  };
+  for(const name of ["pointerdown","click","input","change"]) document.addEventListener(name,cancelForControl,true);
+}
+
+let djComparison=null,djComparisonUndo=null;
+function comparisonBassVolume(value){return djAudition?.compareBass??value;}
+function djComparisonCurrent(){return djComparison&&djComparison.owner===session&&djComparison.source===JSON.stringify(exportPocketDjSession(session))&&djComparison.range===djAuditionPlan()?.label;}
+function renderDjComparison(){
+const box=document.getElementById("djComparison");if(!box)return;
+const ready=!!djComparisonCurrent();
+for(const action of ["a","b","apply"])box.querySelector(`[data-compare=${action}]`).disabled=!ready||(action==="apply"&&(djComparison.example||djComparison.a===djComparison.b));
+box.querySelector("[data-compare=stop]").disabled=!djAudition;
+box.querySelector("[data-compare=undo]").disabled=!djComparisonUndo||djComparisonUndo.owner!==session||djComparison?.example||session.performance.stemVolumes.bass!==djComparisonUndo.after;
+}
+function discardDjComparison(message="Discarded. Deck and saved source are unchanged."){
+djComparison=null;if(djAudition)stopPlayback({preservePerformance:true});document.getElementById("djComparisonStatus").textContent=message;renderDjComparison();
+}
+async function djComparisonAction(action){
+const status=document.getElementById("djComparisonStatus");
+if(action==="discard"){discardDjComparison();return;}
+if(action==="stop"){stopPlayback({preservePerformance:true});status.textContent="Comparison stopped. A or B replays the same passage.";renderDjComparison();return;}
+if(action==="undo"){
+const edit=djComparisonUndo;if(djComparison?.example||!edit||edit.owner!==session||session.performance.stemVolumes.bass!==edit.after){status.textContent="Bass changed since Apply. Undo was not applied.";return;}
+discardDjComparison("");session.performance.stemVolumes.bass=edit.before;djComparisonUndo=null;applyMixerAndFx();autosave();renderAll();status.textContent="Undid the bass proposal. Other settings retained.";renderDjComparison();return;
+}
+if(!session){status.textContent="Import a song first.";return;}
+if(action==="prepare"||action.startsWith("example")){
+if(session.performance.buildActive||state.dropQueued||state.dropLanding||state.buildSavedFx||macroFrameId||session.performance.funkMacros?.phraseFill){status.textContent="Finish or reset build/drop/fill before comparing.";return;}
+stopPlayback({preservePerformance:true});
+const original=session.performance.stemVolumes.bass;
+djComparison={owner:session,source:JSON.stringify(exportPocketDjSession(session)),range:djAuditionPlan().label,a:original,b:clamp(Number(document.getElementById("djComparisonBass").value)/100,0,1),example:action.startsWith("example")};
+if(djComparison.example)djComparison.b=original*.5;
+status.textContent="Ready. Listen for bass leaving room for other parts. A/B replay the same passage start; levels are deliberately not matched for this balance edit.";
+renderDjComparison();if(action==="prepare")return;action=action==="example-a"?"a":"b";
+}
+if(!djComparisonCurrent()){discardDjComparison("Deck or range changed. Prepare again.");return;}
+if(action==="apply"){
+if(djComparison.example||djComparison.a===djComparison.b)return;
+const proposal=djComparison;stopPlayback({preservePerformance:true});
+djComparisonUndo={owner:session,before:proposal.a,after:proposal.b};session.performance.stemVolumes.bass=proposal.b;djComparison=null;applyMixerAndFx();autosave();renderAll();status.textContent="Bass proposal applied as one edit. Undo restores its previous level.";renderDjComparison();return;
+}
+if(action==="a"||action==="b"){
+const owner=djComparison;if(djAudition)stopPlayback({preservePerformance:true});const audition=await hearDjBit(owner[action]);
+if(audition&&djAudition===audition&&state.playing&&djComparison===owner&&djComparisonCurrent()){status.textContent=`${owner.example?"Example":"Comparison"} ${action.toUpperCase()}, bass ${Math.round(owner[action]*100)}%. Same passage start.`;renderDjComparison();}
+}
+}
+function bindDjComparison(){
+const box=document.createElement("details");box.id="djComparison";
+box.innerHTML='<summary>Compare bass balance</summary><p class="tiny">Temporary audition on the visible passage. A/B replay from the same start; Apply is the only action that changes the deck.</p><label>Proposed bass % <input id="djComparisonBass" type="number" min="0" max="100" step="5" value="50"></label><div class="row"><button data-compare="prepare">Prepare proposal</button><button data-compare="a">A · Original</button><button data-compare="b">B · Proposed</button><button data-compare="stop">Stop comparison</button><button data-compare="apply">Apply</button><button data-compare="discard">Discard</button><button data-compare="undo">Undo proposal</button></div><p class="tiny">Playable example on your passage: listen for space around the kick when bass is halved. Examples cannot be applied or saved.</p><div class="row"><button data-compare="example-a">Hear original example</button><button data-compare="example-b">Hear quieter bass example</button></div><p id="djComparisonStatus" class="tiny" role="status" aria-live="polite">Not compared. Nothing autoplays.</p>';
+document.getElementById("djAuditionControls").insertAdjacentElement("afterend",box);
+for(const button of box.querySelectorAll("button")){button.classList.add("btn");button.style.minHeight="44px";}
+box.querySelector("input").classList.add("input");
+for(const row of box.querySelectorAll(".row")){row.style.display="flex";row.style.flexWrap="wrap";row.style.gap="6px";}
+box.addEventListener("click",event=>{const action=event.target.closest("[data-compare]")?.dataset.compare;if(action)void djComparisonAction(action);});
+box.querySelector("input").addEventListener("input",()=>discardDjComparison("Proposal changed. Prepare again."));
+const cancel=event=>{if(djComparison&&!box.contains(event.target)&&event.target.closest?.("button,input,select,textarea,a")&&!event.target.closest("#playBtn,#stopBtn,#restartBtn"))discardDjComparison("Another control changed. Prepare again.");};
+for(const name of ["pointerdown","click","input","change","keydown"])document.addEventListener(name,cancel,true);
+renderDjComparison();
+}
+
 function bindElements(){
   ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importError","importBtn","demoBtn","lofiDemoBtn","chipDemoBtn","metalDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","funkOneDropBtn","funkBassMuteBtn","funkSlapPopBtn","funkGhostLiftBtn","funkPhraseFillBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
 }
@@ -2716,7 +3002,7 @@ function showStatus(msg){
   if(el.importStatus) el.importStatus.textContent = msg;
   if(el.toast){ el.toast.textContent = msg; el.toast.classList.add("show"); clearTimeout(el.toast._timer); el.toast._timer = setTimeout(() => el.toast.classList.remove("show"), 1800); }
 }
-function renderAll(){ renderShell(); renderMeta(); renderTransportState(); renderPads(); renderSequence(); renderMixer(); renderFx(); updateButtons(); }
+function renderAll(){ renderShell(); renderMeta(); renderTransportState(); renderPads(); renderSequence(); renderMixer(); renderFx(); updateButtons(); renderDjAudition(); }
 function renderShell(){
   applyImportedTheme(session?.deck?.theme || "night");
   const hasSession = !!session;
@@ -2775,6 +3061,7 @@ function renderTransportState(){
   el.beatDots.innerHTML = Array.from({length:session.deck.timeSig},(_,i)=>`<div class="beat-dot ${state.currentStep >= 0 && i+1 === state.beat ? "on" : ""}"></div>`).join("");
   el.playBtn.textContent = state.playing ? "Pause" : "Play";
   el.loopBtn.textContent = session.performance.loopCurrentSection ? "Release Hold" : "Hold Section";
+  renderDjAudition();
 }
 function renderPads(){
   if(!session) return;
@@ -3044,6 +3331,7 @@ function closeHelp(){
 
 /* 11. Event handlers */
 function bindHandlers(){
+  bindDjAudition();
   el.importBtn.addEventListener("click", handleImport);
   el.importText.addEventListener("input", () => setImportError());
   el.importHelpBtn?.addEventListener("click", openHelp);
@@ -3108,7 +3396,7 @@ async function handleImport(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(el.importText.value);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -3132,7 +3420,7 @@ async function consumeIncomingPocketDjHandoff(){
   try{
     await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(payload.code);
-    session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data);
+    adoptPocketDjSession(parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data), parsed.data));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0;
     state.dropQueued = false;
@@ -3161,7 +3449,7 @@ function loadLocalSession(){
   try{
     const raw = localStorage.getItem(LOCAL_KEY);
     if(!raw) return showStatus("No saved Pocket DJ session yet.");
-    session = normalizePocketDjSession(JSON.parse(raw));
+    adoptPocketDjSession(normalizePocketDjSession(JSON.parse(raw)));
     state.currentSection = session.performance.currentSection;
     state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx(); session.performance.buildActive = false;
     primePocketAudioCore(session.source.project, "saved session source");
@@ -3170,7 +3458,7 @@ function loadLocalSession(){
 }
 function clearLocalSession(){
   try{ localStorage.removeItem(LOCAL_KEY); }catch(e){}
-  stopPlayback(); session = null; renderShell(); showStatus("Session cleared");
+  adoptPocketDjSession(null); renderShell(); showStatus("Session cleared");
 }
 
 /* 13. Demo data */
@@ -3427,25 +3715,25 @@ function makeMetalDemoProject(){
   return project;
 }
 function loadDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "demo");
   saveLocalSession(); renderAll(); showStatus("Demo deck loaded");
 }
 function loadLofiDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeLofiDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "lofi demo");
   saveLocalSession(); renderAll(); showStatus("Lofi DJ Demo loaded");
 }
 function loadChipDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "chip demo");
   saveLocalSession(); renderAll(); showStatus("Chip DJ Demo loaded");
 }
 function loadMetalDemo(){
-  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject()));
+  adoptPocketDjSession(createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeMetalDemoProject())));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "metal demo");
   saveLocalSession(); renderAll(); showStatus("Heavy Metal DJ Demo loaded");

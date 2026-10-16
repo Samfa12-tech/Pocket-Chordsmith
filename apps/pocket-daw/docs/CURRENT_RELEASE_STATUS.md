@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.51` |
+| Source version | `0.6.55` |
 | Project schema version | `3` |
 | Latest published version | `0.6.50` |
 | Latest published tag | `pocket-daw-v0.6.50` |
@@ -26,7 +26,13 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.51 is a source-only release-status checkpoint. No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit.
+- 0.6.55 is an isolated source integration candidate based on current main, retaining exact published Chordsmith v70/DJ v1i corrections while leaving the Godot addon at main. It retains the bounded decoded cache only across ordinary transport Stop/Play and exposes bounded startup stage timings. Teardown and uncertain acknowledgments still clear residency. No 0.6.55 installer, installed pass or release exists.
+- The frozen 0.6.54 fa38172 installer and receipt remain immutable and unpublished. Sam confirmed the Undo/Redo export viewport fix; installed media, VST3, game-pack decoding and separate MIDI-only checks passed. Whole acceptance remains blocked on eligible capture evidence and remaining native manual scope. Bounded raw HTTP diagnostics reproduced 4.42/3.72-second warm Play delays; source-native instrumentation and the cache-retention correction require independent review and a new exact installer.
+- The frozen0.6.53 candidate remains preserved and unpublished. Its fresh deliberately authorized microphone, connected loopMIDI, retained WAV/MIDI exports, installed media, VST3 and game-pack decode checks passed. Sam confirmed comparison, Stop and requested examples worked; Undo restored the mix but moved the export area out of view. That reproduced UI defect holds0.6.53. Neither its partial attestation nor source status is an overall installed pass.
+- 0.6.52 is the unreleased replacement family candidate, based on independently accepted PR124 commit 497d2fa7c9c72d0bfe9febd1b417892f8fd52442. It retains bounded cache/residency and hydration recovery, Campfire Acoustic, finite native passage audition, reversible Finish comparison, calibrated meters/final WAV checks, arranged native Godot exports, and menu/focus/overflow corrections.
+- The frozen 0.6.51 candidate is withheld after a native Open dialog blocked commands. This replacement makes file selection asynchronous, preserves Cancel without a second picker, and rejects stale project/recovery/MIDI startup and playback-preparation completions. The original 0.6.51 artifact and partial installed evidence remain preserved; they are not a complete installed pass for this replacement.
+- Installer preparation, exact installed PCM/MIDI/export/device checks, retained listening evidence and parent review are separate gates. Candidate receipts and attestations identify tested bytes; this source status does not claim a new installed or public pass.
+- The latest public and recorded installed-smoke version remains 0.6.50 at its exact tested commit. The unchanged itch bootstrapper is not a new full-installer upload target.
 
 ## Installed-Smoke Exception
 

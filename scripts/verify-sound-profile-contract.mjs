@@ -37,7 +37,7 @@ const surfaces = Object.freeze([
   },
   {
     name: "Pocket Chordsmith",
-    paths: ["apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html"],
+    paths: ["apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html"],
     required: [...PROFILE_IDS, "formatFeatures", "bassArticulation"],
   },
   {
@@ -72,7 +72,7 @@ if (!/PCS_LEGACY_SCHEMA_VERSION\s*=\s*16/.test(pcsText))
   failures.push("PCS Format: schema-16 compatibility constant is missing");
 
 const chordsmith = readSurface(
-  "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html",
+  "apps/chordsmith-web/pocket_chordsmith_v70_core_bridge.html",
 );
 if (!/PROJECT_SCHEMA_VERSION\s*=\s*17/.test(chordsmith))
   failures.push("Pocket Chordsmith: project schema is not 17");

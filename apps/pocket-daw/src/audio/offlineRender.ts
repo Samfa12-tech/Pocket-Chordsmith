@@ -363,7 +363,16 @@ export function encodeWav(buffer: AudioBuffer, options: { channelMode?: WavChann
 export async function wavBlobWithChannelMode(blob: Blob, channelMode: WavChannelMode, options: { bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Promise<Blob> {
   const targetBitDepth = options.bitDepth;
   const dither = normalizeWavDither(options.dither);
-  if (channelMode !== "mono" && !options.normalizePeak && dither === "off" && (!targetBitDepth || targetBitDepth === 16)) return blob;
+  const unchangedStereo = channelMode !== "mono" && !options.normalizePeak && dither === "off";
+  if (unchangedStereo && !targetBitDepth) return blob;
+  if (unchangedStereo && targetBitDepth === 16) {
+    // Keep the normal native PCM16 fast path without assuming that every
+    // stereo source is PCM16. Inspect only its canonical 44-byte header.
+    const header = new DataView(await blob.slice(0, 44).arrayBuffer());
+    if (header.byteLength === 44 && readAscii(header, 0, 4) === "RIFF" && readAscii(header, 8, 4) === "WAVE"
+      && readAscii(header, 12, 4) === "fmt " && header.getUint32(16, true) === 16 && header.getUint16(20, true) === 1
+      && header.getUint16(34, true) === 16 && readAscii(header, 36, 4) === "data" && header.getUint32(40, true) + 44 === blob.size) return blob;
+  }
   const source = new Uint8Array(await blob.arrayBuffer());
   const sourceInfo = parseWav(source);
   if (!sourceInfo) throw new Error("Native WAV export returned a format that cannot be processed.");

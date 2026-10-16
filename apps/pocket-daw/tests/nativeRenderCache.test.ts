@@ -80,10 +80,12 @@ import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
-import type { Clip, MediaPoolItem } from "../src/daw/schema";
+import type { Clip, MediaPoolItem, PocketDawProject } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 import { simpleMidiBytes } from "./midiFixtures";
+import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 
 function nativeRenderResult(samples: number[] = [512, -512, 256, -256]) {
   const bytes = Array.from(wavBytes(48_000, 2, samples));
@@ -103,6 +105,58 @@ describe("native render cache", () => {
     offlineRenderMock.encodeWav.mockClear();
     nativeMediaBridgeMock.renderNativeAudioWav.mockReset();
     nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(nativeRenderResult() as never);
+  });
+
+  it("retains complete Campfire tails through render, reuse and hydrate without treating adjacent tails as body overlap", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      projectVersion: 17, bpm: 120, timeSig: 4, resolution: 4, songSequence: ["A", "A"], sectionBars: { A: 1 }, guitarEnabled: true,
+      sections: { A: { tracks: { guitar: { events: [
+        { tick: 1680, durationTicks: 120, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, direction: "down" }
+      ] } } } }
+    }));
+    project.project.sampleRate = 48000;
+    const reference = renderTimelineEvents(project).filter((event) => event.instrument === "campfire_acoustic");
+    expect(reference).toHaveLength(2);
+    const expectedDuration = 1.75 + 1.5 + 3 * 0.027;
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: NativeAudioStartPayload, durationSeconds: number) => Promise<unknown>): void;
+    };
+    const requests: Array<{ payload: NativeAudioStartPayload; duration: number }> = [];
+    renderMock.mockImplementation(async (payload, durationSeconds) => {
+      requests.push({ payload, duration: durationSeconds });
+      return { ...nativeRenderResult(), durationSeconds };
+    });
+    const built = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    expect(built.lastGeneratedStemRenderError).toBeNull();
+    const guitarRequests = requests.filter((request) => request.payload.events.some((event) => event.instrument === "campfire_acoustic") && request.payload.tracks.some((track) => track.id === "guitar" && !track.mute));
+    expect(guitarRequests.length).toBeGreaterThan(0);
+    guitarRequests.forEach((request) => expect(request.duration).toBeCloseTo(expectedDuration, 6));
+    const regions = built.regions.filter((region) => region.trackId === "guitar");
+    expect(regions).toHaveLength(2);
+    regions.forEach((region) => {
+      expect(region.duration).toBeCloseTo(expectedDuration, 6);
+      expect(region.generatedBodyDurationSeconds).toBeCloseTo(2, 6);
+    });
+    const items = built.renderCacheItems.filter((item) => item.metadata?.trackId === "guitar");
+    items.forEach((item) => expect(Number(item.metadata?.renderTailSeconds)).toBeCloseTo(expectedDuration - 2, 6));
+    const requestCount = requests.length;
+    const reused = await buildNativeRenderCache(project, nativeRenderCacheSignature(project), built);
+    expect(requests).toHaveLength(requestCount);
+    expect(reused.regions.filter((region) => region.trackId === "guitar")).toEqual(regions);
+    project.renderCache = built.renderCacheItems;
+    const api: NativeMediaApi = { isAvailable: () => true, async invoke(_command, args) {
+      const bytes = wavBytes();
+      return { assetId: String(args?.assetId || ""), path: `C:\\Songs\\${String(args?.relativePath || "")}`, relativePath: String(args?.relativePath || ""), sizeBytes: bytes.length, bytes: Array.from(bytes) } as never;
+    } };
+    const hydrated = await hydrateNativeRenderCacheAssets("C:\\Songs\\Campfire.pocketdaw", project, api);
+    expect(hydrated.errors).toEqual([]);
+    const restored = hydrated.cache!.regions.filter((region) => region.trackId === "guitar");
+    expect(restored).toHaveLength(2);
+    restored.forEach((region) => {
+      expect(region.duration).toBeCloseTo(expectedDuration, 6);
+      expect(region.generatedBodyDurationSeconds).toBeCloseTo(2, 6);
+    });
+    expect(hydrated.cache!.cachedClipIds.size).toBe(built.cachedClipIds.size);
   });
 
   it("does not invalidate cache signatures for live mixer mute and solo changes", () => {
@@ -451,6 +505,61 @@ describe("native render cache", () => {
     expect(secondRenderCount).toBeLessThan(firstRenderCount);
     expect(reusedCount).toBeGreaterThan(0);
     expect(second.renderCacheHitCount).toBeGreaterThan(0);
+  });
+
+  it("reuses unaffected stems through a stopped engine edit, but clears reuse on project load", async () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    await engine.rebuildNativeRenderCache("warm");
+    const coldRenders = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length;
+    const edited = cycleBassStep(project, "A", 0);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+    engine.syncProject(edited, "composition-events");
+    expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(0);
+    const rebuilt = await engine.rebuildNativeRenderCache("stopped-edit");
+    expect(rebuilt?.renderCacheHitCount).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(coldRenders);
+    engine.setProject(project);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+    await engine.rebuildNativeRenderCache("new-project");
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(coldRenders);
+  });
+
+  it("stops dispatching obsolete stems after a deferred render and builds the newest project", async () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    let finish!: (value: ReturnType<typeof nativeRenderResult>) => void;
+    nativeMediaBridgeMock.renderNativeAudioWav.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const obsolete = engine.rebuildNativeRenderCache("obsolete");
+    await vi.waitFor(() => expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(1));
+    const edited = cycleBassStep(project, "A", 0);
+    engine.syncProject(edited, "composition-events");
+    const latest = engine.rebuildNativeRenderCache("latest");
+    finish(nativeRenderResult());
+    await expect(obsolete).resolves.toBeNull();
+    // Only one old stem may finish; no further old jobs reach the renderer.
+    const result = await latest;
+    expect(result?.signature).toBe(nativeRenderCacheSignature(edited));
+    const latestStemCount = result!.renderCacheMissCount;
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(latestStemCount + 1);
+    expect(engine.getDiagnostics().nativeRenderCache.discardedBuildCount).toBe(1);
+    expect(engine.getDiagnostics().nativeRenderCache.lastError).toBeNull();
+  });
+
+  it("does not traverse source music again while validating unchanged full-cache ticks", async () => {
+    const engine = new AudioEngine(createDemoProject());
+    await engine.rebuildNativeRenderCache("warm");
+    const internals = engine as unknown as { project: PocketDawProject; readyNativeRenderCache(): unknown };
+    const sourceReads = vi.spyOn(internals.project.sourceRefs, "map");
+    for (let tick = 0; tick < 100; tick += 1) expect(internals.readyNativeRenderCache()).not.toBeNull();
+    expect(sourceReads).not.toHaveBeenCalled();
+    sourceReads.mockRestore();
+    const edited = cycleBassStep(createDemoProject(), "A", 0);
+    engine.syncProject(edited, "composition-events");
+    expect(internals.readyNativeRenderCache()).toBeNull();
+    const rebuilt = await engine.rebuildNativeRenderCache("changed");
+    expect(rebuilt?.signature).toBe(nativeRenderCacheSignature(edited));
   });
 
   it("filters stale generated native stems to tracks that are still current", async () => {

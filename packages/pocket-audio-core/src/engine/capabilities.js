@@ -1,6 +1,8 @@
 import { POCKET_AUDIO_FORMAT_FEATURES, POCKET_AUDIO_PROFILE_IDS, normalisePocketAudioProfileId } from "../profiles/profile-registry.js";
 import { POCKET_AUDIO_COMMON_ARTICULATIONS } from "../performance/expression.js";
 import { POCKET_AUDIO_COMMON_DRUM_LANE_IDS, normalisePocketAudioDrumLane, pocketAudioDrumLaneFallback } from "../sounds/drum-lanes.js";
+import { SECTION_IDS } from "../constants.js";
+import { POCKET_PREPARED_GUITAR_TONES } from "../sounds/guitar.js";
 
 const DIRECT_DRUM_LANES = Object.freeze(["kick", "snare", "clap", "hat_closed", "hat_open"]);
 const DIRECT_ARTICULATIONS = Object.freeze([
@@ -16,6 +18,7 @@ export const POCKET_AUDIO_RENDERER_CAPABILITIES = Object.freeze({
     directDrumLanes: DIRECT_DRUM_LANES,
     directArticulations: DIRECT_ARTICULATIONS,
     techniqueCommands: {
+      campfire: ["seed", "recipeVersion", "tailPolicy", "strumSeconds"],
       chip: ["channel", "duty", "envelope", "commands", "sweep", "pitchSlide", "vibrato", "retrigger"],
       metal: ["palmMute", "pickDirection", "tremoloRate", "string", "dualTakeSeed"],
       western: ["pickDirection", "strumDirection", "banjoRoll", "bowDirection", "breathDirection", "bend"],
@@ -27,6 +30,7 @@ export const POCKET_AUDIO_RENDERER_CAPABILITIES = Object.freeze({
     directDrumLanes: DIRECT_DRUM_LANES,
     directArticulations: DIRECT_ARTICULATIONS,
     techniqueCommands: {
+      campfire: ["seed", "recipeVersion", "tailPolicy", "strumSeconds"],
       chip: ["channel", "duty", "envelope", "commands", "sweep", "pitchSlide", "vibrato", "retrigger"],
       metal: ["palmMute", "pickDirection", "tremoloRate", "string", "dualTakeSeed"],
       western: ["pickDirection", "strumDirection", "banjoRoll", "bowDirection", "breathDirection", "bend"],
@@ -55,7 +59,10 @@ export function createPocketAudioRendererCapabilityReport(input, options = {}) {
 
   collectRichEvents(input).forEach(({ event, path, trackId }) => {
     const articulation = String(event.articulation || "").toLowerCase();
-    if (articulation && !capabilities.directArticulations.includes(articulation)) {
+    const campfire = (event.sound || event.instrument) === "campfire_acoustic" && (trackId === "guitar" || event.type === "guitar");
+    if (campfire && articulation && !["open", "accent", "finger"].includes(articulation)) {
+      entries.push(campfireArticulationEntry(`${path}.articulation`, articulation));
+    } else if (articulation && !capabilities.directArticulations.includes(articulation)) {
       const action = capabilities.approximatedArticulations.includes(articulation) ? "approximated" : "fallback";
       entries.push(entry(`${path}.articulation`, `articulation:${articulation}`, action, articulationFallback(articulation), `${articulation} is ${action} by ${capabilities.id}; source intent is preserved.`));
     }
@@ -71,6 +78,24 @@ export function createPocketAudioRendererCapabilityReport(input, options = {}) {
       Object.keys(commands || {}).forEach((command) => {
         if (!supported.has(command)) entries.push(entry(`${path}.technique.${namespace}.${command}`, `technique:${namespace}:${command}`, "preserved", "", `Unknown ${namespace}.${command} command is preserved but not interpreted.`));
       });
+    });
+  });
+
+  SECTION_IDS.forEach((id) => {
+    const section = input?.sections?.[id];
+    const guitar = section?.guitar;
+    if (!(guitar?.enabled ?? input?.guitarEnabled)) return;
+    const tone = guitar?.tone || input?.guitarTone;
+    const performance = guitar?.performance || input?.[`guitarPerformance${id}`] || "grid";
+    if (performance !== "grid" && (performance !== "strum_pick" || tone !== "campfire_acoustic")) entries.push(entry(`sections.${id}.guitar.performance`, `guitar-performance:${performance}`, "fallback", "grid", "This guitar performance is unsupported for the selected tone. The grid is used and source intent is retained."));
+    if (tone !== "campfire_acoustic") return;
+    const pattern = guitar?.pattern || input?.[`guitarPattern${id}`] || [];
+    const automatic = performance === "strum_pick";
+    if (!automatic && !pattern.some(value => value && value !== "off" && value !== "hold")) return;
+    const chordType = section?.chords?.type || input?.chordType;
+    if (["seventh", "sus2", "sus4"].includes(chordType)) entries.push(entry(`sections.${id}.chords.type`, `campfire-chord:${chordType}`, "approximated", "triad", `Compact Campfire voicings support major/minor triads. Use explicit rich note arrays to preserve ${chordType} chords; source chord intent is retained.`));
+    pattern.forEach((articulation, index) => {
+      if (!automatic && (articulation === "chug" || articulation === "scratch")) entries.push(campfireArticulationEntry(`sections.${id}.guitar.pattern[${index}]`, articulation));
     });
   });
 
@@ -101,6 +126,7 @@ function capability(id, values) {
     drumLanes: POCKET_AUDIO_COMMON_DRUM_LANE_IDS,
     directDrumLanes: values.directDrumLanes,
     techniqueCommands: Object.freeze(values.techniqueCommands),
+    preparedGuitarTones: POCKET_PREPARED_GUITAR_TONES,
     preservesUnknownData: true,
     reportsFallbacks: true,
     sampleClock: values.sampleClock
@@ -123,6 +149,10 @@ function articulationFallback(value) {
   if (value === "flam" || value === "drag" || value === "roll") return "accent";
   if (value === "pop" || value === "slap") return "accent";
   return "finger";
+}
+
+function campfireArticulationEntry(path, articulation) {
+  return entry(path, `campfire-articulation:${articulation}`, "fallback", "natural-pluck", `Campfire renders ${articulation} as its natural pluck; amplifier gates and expressive techniques are unsupported. Source intent is preserved.`);
 }
 
 function entry(path, feature, action, fallback, message) {

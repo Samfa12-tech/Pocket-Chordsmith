@@ -22,8 +22,8 @@ describe("native offline WAV rendering", () => {
           sampleRate: 48_000,
           channels: 2,
           durationSeconds: Number((args as Record<string, unknown>).durationSeconds),
-          sizeBytes: 4,
-          bytes: [82, 73, 70, 70]
+          sizeBytes: 48,
+          bytes: [...wavHeaderBytes({ sampleRate: 48000, channels: 2, dataSize: 4 }), 0, 0, 0, 0]
         } as never;
       }
     };
@@ -31,7 +31,7 @@ describe("native offline WAV rendering", () => {
     const blob = await renderProjectToNativeWavBlob(project, api);
 
     expect(blob?.type).toBe("audio/wav");
-    expect(blob?.size).toBe(4);
+    expect(blob?.size).toBe(48);
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe("native_audio_render_wav");
     const args = calls[0].args!;
@@ -318,8 +318,8 @@ describe("native offline WAV rendering", () => {
           sampleRate: 48_000,
           channels: 2,
           durationSeconds: Number((args as Record<string, unknown>).durationSeconds),
-          sizeBytes: 4,
-          bytes: [82, 73, 70, 70]
+          sizeBytes: 48,
+          bytes: [...wavHeaderBytes({ sampleRate: 48000, channels: 2, dataSize: 4 }), 0, 0, 0, 0]
         } as never;
       }
     };

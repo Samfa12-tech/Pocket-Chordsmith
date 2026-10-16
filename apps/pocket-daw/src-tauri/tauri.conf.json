@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Pocket DAW",
-  "version": "0.6.51",
+  "version": "0.6.55",
   "identifier": "io.pocketfamily.pocketdaw",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -37,7 +37,9 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["pocketdaw"],
+        "ext": [
+          "pocketdaw"
+        ],
         "name": "Pocket DAW Project",
         "description": "Pocket DAW project",
         "role": "Editor",
@@ -48,7 +50,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["pocket-daw"]
+        "schemes": [
+          "pocket-daw"
+        ]
       }
     },
     "updater": {

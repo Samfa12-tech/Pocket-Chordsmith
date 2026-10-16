@@ -58,6 +58,7 @@ import {
   setChordInstrument,
   setChordsmithGlobals,
   setGuitarSettings,
+  setGuitarPerformance,
   setMelodyMute,
   setMelodyOctave,
   setMelodyPan,
@@ -2680,7 +2681,16 @@ export function applyGuitarPresetCommand(state: AppState, sectionId: string, pre
 }
 
 export function setGuitarSettingsCommand(state: AppState, patch: Parameters<typeof setGuitarSettings>[1]): AppState {
+  const pcs = getPrimaryChordsmithSource(state.undoStack.present);
+  if (pcs && (patch.guitarTone ?? pcs.guitarTone) === "campfire_acoustic" && (patch.guitarRegister ?? pcs.guitarRegister) === "high" && Object.values(pcs.sections).some(section => section.guitarPerformance === "strum_pick")) return {...state,status:"Campfire strum and pick needs Low or Mid register. Choose Grid for those sections before using High."};
   return commitProject(state, setGuitarSettings(state.undoStack.present, patch), "Updated Chordsmith guitar settings.");
+}
+
+export function setGuitarPerformanceCommand(state: AppState, sectionId: string, value: string): AppState {
+  if (!isSectionId(sectionId)) return state;
+  const pcs = getPrimaryChordsmithSource(state.undoStack.present);
+  if (value === "strum_pick" && (pcs?.guitarTone !== "campfire_acoustic" || pcs.guitarRegister === "high")) return {...state,status:"Choose Campfire Acoustic in Low or Mid register for strum and pick. Your part is unchanged."};
+  return commitProject(state,setGuitarPerformance(state.undoStack.present,sectionId,value),`Updated Section ${sectionId} guitar performance; stored notes retained.`);
 }
 
 export function undoCommand(state: AppState): AppState {

@@ -2,29 +2,35 @@
 
 > Generated from `apps/pocket-daw/test-scope-manifest.json` by `node scripts/verify-test-scope-manifest.mjs --write-matrix`. Do not hand-edit this file.
 
-Current inventory: 103 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
+Current inventory: 114 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
 
 ## Category totals
 
 | Category | Test artifacts |
 | --- | ---: |
-| browser-e2e | 1 |
-| compatibility-parity | 18 |
+| browser-e2e | 4 |
+| compatibility-parity | 19 |
 | integration | 23 |
 | native-rust | 2 |
 | release-contract | 15 |
-| unit-domain | 29 |
-| windows-contract | 15 |
+| unit-domain | 34 |
+| windows-contract | 17 |
 
 ## Inventory
 
 | Test artifact | Primary category | Platforms | PR | Main | Release prepare | Ordinary Vitest | Evidence requirement | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `apps/pocket-daw/tests/campfireAuthoring.test.ts` | compatibility-parity | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Campfire source/clock/clip/MIDI/undo/cache intent; native PCM/device evidence is separate. |
 | `apps/pocket-daw/tests/aiBridgeLiveCommands.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained integration coverage for live-command planning. |
 | `apps/pocket-daw/tests/appInteractionSource.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Behavioral replacement is owned by the App interaction controller workstream. |
 | `apps/pocket-daw/tests/audioClipCommands.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained domain command coverage. |
 | `apps/pocket-daw/tests/audioClips.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained domain coverage. |
 | `apps/pocket-daw/tests/audioEngine.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained deterministic audio-engine coverage. |
+| `apps/pocket-daw/tests/selectionAudition.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Read-only contextual audition range, authored tempo timing and explicit limits; native clock/audio and installed acceptance remain separate. |
+| `apps/pocket-daw/tests/finishing.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Finish proposals preserve user effects; attenuation-only monitor matching rejects incompatible measurements. |
+| `apps/pocket-daw/tests/finishAnalysis.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Actual decoded float PCM metrics, fail-closed headers/ranges and worker cancellation. |
+| `apps/pocket-daw/tests/deliveryQc.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Immutable delivery-byte ownership, deferred/cancelled checks, late-result rejection and explicit limits. |
+| `apps/pocket-daw/tests/finishPreview.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Owned preview reservation/render/read/discard lifecycle, cancellation and late-result rejection. |
 | `apps/pocket-daw/tests/automation.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained domain coverage. |
 | `apps/pocket-daw/tests/automationSurface.test.ts` | compatibility-parity | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained surface parity coverage. |
 | `apps/pocket-daw/tests/bassOverlays.test.ts` | compatibility-parity | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained schema/event overlay parity. |
@@ -41,6 +47,9 @@ Current inventory: 103 runnable test artifacts. The categories below identify th
 | `apps/pocket-daw/tests/diagnostics.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained diagnostics integration. |
 | `apps/pocket-daw/tests/drumBranching.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained deterministic composition behavior. |
 | `apps/pocket-daw/tests/e2e/smoke.spec.js` | browser-e2e | linux | yes | yes | yes | no | none (validator/fixture only) | Linux owns complete browser E2E. |
+| `apps/pocket-daw/tests/e2e/desktop-menus.spec.js` | browser-e2e | linux | yes | yes | yes | no | none (validator/fixture only) | Menu overflow, command keyboard ownership, dismissal, focus return and resize in browser shell geometry; installed Windows scaling remains separate. |
+| `apps/pocket-daw/tests/e2e/selection-audition.spec.js` | browser-e2e | linux | yes | yes | yes | no | none (validator/fixture only) | Contextual audition UI, no-autoplay/capability honesty and mocked IPC cancellation only; actual native PCM/device acceptance is separate. |
+| `apps/pocket-daw/tests/e2e/finish-comparison.spec.js` | browser-e2e | linux, windows | yes | yes | yes | no | none (validator/fixture only) | Finish UI command fixtures cover no-autoplay, stale/cancel/late-side replies and one Undo; actual production worker completes/cancels five-minute PCM analysis with measured UI responsiveness. No native/device/listening acceptance. |
 | `apps/pocket-daw/tests/eventRenderer.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained renderer behavior. |
 | `apps/pocket-daw/tests/exportJobs.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained export plan behavior. |
 | `apps/pocket-daw/tests/exportProfile.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained export-profile domain behavior. |
@@ -123,3 +132,5 @@ Current inventory: 103 runnable test artifacts. The categories below identify th
 | `apps/pocket-daw/src/daw/exportProfiles.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated export-profile domain behavior. |
 | `apps/pocket-daw/src/daw/timeline.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated timeline domain behavior. |
 | `apps/pocket-daw/src/plugins/vst3Foundation.test.ts` | windows-contract | windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated VST3 foundation contract. |
+| `apps/pocket-daw/tests/projectFileOpen.test.ts` | windows-contract | windows | yes | yes | yes | yes | none (validator/fixture only) | Native picker cancellation, unavailable fallback, duplicate requests and stale project result protection. |
+| `apps/pocket-daw/tests/projectOpenOwnership.integration.test.ts` | windows-contract | windows | yes | yes | yes | yes | none (validator/fixture only) | Actual imported App methods: pending Web MIDI/picker/recovery generations, reset/Stop and stale completion ordering. Device/picker/render boundaries substituted; not native device acceptance. |

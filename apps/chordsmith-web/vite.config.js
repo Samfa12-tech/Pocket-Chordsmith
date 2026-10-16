@@ -2,14 +2,15 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
 export default defineConfig({
+  base: "./",
   appType: "mpa",
   build: {
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
-        pocket_chordsmith_v68_core_bridge: resolve(
+        pocket_chordsmith_v70_core_bridge: resolve(
           __dirname,
-          "pocket_chordsmith_v68_core_bridge.html",
+          "pocket_chordsmith_v70_core_bridge.html",
         ),
       },
     },

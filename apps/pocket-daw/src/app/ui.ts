@@ -1,4 +1,6 @@
 import type { AppState } from "./state";
+import { selectionAuditionPlan } from "../daw/selectionAudition";
+import { FINISH_PRESETS } from "../daw/finishing";
 import { currentProject, isUiSectionCollapsed, type ChordsmithStepSelection, type LowerDockTab, type UiCollapseSection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, getDrumLaneFxChain, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
@@ -8,7 +10,7 @@ import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmith
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
 import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type AutomationLane, type AutomationPoint, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type HostedPluginIdentity, type HostedPluginParameterDescriptor, type HostedPluginProjectMetadata, type HostedPluginStateSnapshot, type JsonObject, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
-import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
@@ -306,11 +308,12 @@ function renderMenuStrip(state: AppState): string {
 }
 
 function renderMenuGroup(label: string, actions: Array<[string, string]>): string {
+  const id = `desktop-menu-${label.toLowerCase()}`;
   return `
     <div class="menu-group">
-      <button class="menu-root" type="button">${escapeHtml(label)}</button>
-      <div class="menu-popover">
-        ${actions.map(([name, action]) => `<button type="button" data-action="${escapeAttr(action)}">${escapeHtml(name)}</button>`).join("")}
+      <button class="menu-root" id="${id}" type="button" aria-haspopup="menu" aria-controls="${id}-popup" aria-expanded="false">${escapeHtml(label)}</button>
+      <div class="menu-popover" id="${id}-popup" role="menu" aria-labelledby="${id}" hidden>
+        ${actions.map(([name, action]) => `<button type="button" role="menuitem" tabindex="-1" data-action="${escapeAttr(action)}">${escapeHtml(name)}</button>`).join("")}
       </div>
     </div>
   `;
@@ -485,6 +488,7 @@ function renderTimeline(state: AppState): string {
                 <button data-action="trim-end-left" title="Trim the selected clip end earlier by one snap step">Trim End</button>
                 <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
                 <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute Clip</button>
+                ${renderSelectionAuditionButtons(state)}
               </div>
               ${renderTimelineSongSettings(pcs)}
               <div class="timeline-options">
@@ -564,6 +568,7 @@ function renderCompactTimelineTools(
   return `
     <div class="timeline-compact-tools" aria-label="Essential timeline tools">
       <span class="timeline-compact-status">${escapeHtml(loopSummary)} / ${escapeHtml(rangeSummary)}</span>
+      ${renderSelectionAuditionButtons(state)}
       <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
       <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
       <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
@@ -870,7 +875,7 @@ function renderInlineChordsmithClip(
           : track.role === "melody"
             ? renderInlineMelodyEditor(section, selectedMelodyTrackIndex(track), sourceStartStep, renderSteps, state.chordsmithStepSelection)
             : track.role === "guitar"
-              ? renderInlineGuitarEditor(section, sourceStartStep, renderSteps)
+              ? renderInlineGuitarEditor(pcs, section, sourceStartStep, renderSteps)
               : "";
   if (!body) return "";
   return `
@@ -972,15 +977,23 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
   `;
 }
 
-function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
+function guitarStepDisplay(pcs: SanitizedPcsProject, section: SanitizedPcsSection, step: number) {
+  const automatic = pcs.guitarTone === "campfire_acoustic" && section.guitarPerformance === "strum_pick";
+  const imported = !automatic && section.richEvents.guitar.some(event => !event.compactMirror && event.sound === "campfire_acoustic");
+  const beat = Math.floor(step / pcs.resolution);
+  const art = automatic ? step % pcs.resolution === 0 ? beat % 4 === 0 ? "strum" : beat % 2 === 1 ? "pick" : "off" : "off" : section.guitarPattern[step] || "off";
+  return {art, disabled: automatic || imported, hint: automatic ? ". Choose Grid to edit stored notes." : imported ? ". Imported notes play instead; choose a rhythm preset to replace them." : ""};
+}
+
+function renderInlineGuitarEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   return `
     <div class="inline-lane single-inline-lane" data-step-grid="true" role="group" aria-label="Guitar steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const art = section.guitarPattern[actualStep] || "off";
+          const {art, disabled, hint} = guitarStepDisplay(pcs, section, actualStep);
           const on = art !== "off";
-          return `<button class="step timeline-step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          return `<button class="step timeline-step guitar-step ${on ? "on" : ""}" ${disabled ? "disabled" : ""} ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}${hint}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -1329,6 +1342,7 @@ function renderClipEditPalette(project: ReturnType<typeof currentProject>, state
     && selectedClips.every((item) => item.type === clip.type && item.trackId === clip.trackId);
   return `
     <div class="clip-edit-palette" aria-label="Selected clip edit actions">
+        ${renderSelectionAuditionSettings(state)}
       <h3>Edit</h3>
       <p class="editor-note">These edit the selected clip or the active edit range and can be undone.</p>
       <div class="clip-edit-grid">
@@ -1356,6 +1370,34 @@ function renderClipEditPalette(project: ReturnType<typeof currentProject>, state
       </div>
     </div>
   `;
+}
+
+function selectionAuditionDescription(state: AppState): { text: string; available: boolean; range: string } {
+  try {
+    const plan = selectionAuditionPlan(currentProject(state), Array.from(selectedClipIdSet(state)), state.auditionLeadInSeconds, state.auditionTailSeconds);
+    const recording = ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+    return { text: recording ? "Finish recording before auditioning a selection." : `${plan.label}, bars ${formatBarNumber(plan.startBar)}-${formatBarNumber(plan.endBar)} in the current mix; ${plan.leadInSeconds.toFixed(1)}s lead-in, ${plan.tailSeconds}s tail; final 10ms monitor fade.`, available: !recording, range: recording ? "Finish recording" : `Bars ${formatBarNumber(plan.startBar)}-${formatBarNumber(plan.endBar)}` };
+  } catch (error) { return { text: error instanceof Error ? error.message : "Select a clip or range.", available: false, range: "Choose a shorter range (up to 120s)" }; }
+}
+
+function renderSelectionAuditionButtons(state: AppState): string {
+  if (!currentProject(state).timeline.selection && selectedClipIdSet(state).size === 0) return "";
+  const description = selectionAuditionDescription(state);
+  const active = state.selectionAudition.phase !== "idle";
+  return `<span class="selection-audition-controls" aria-label="Selection audition">
+    <button type="button" class="selection-audition-hear" data-action="audition-selection" data-audition-control="hear" title="${escapeAttr(description.text)}" aria-label="${escapeAttr(`Hear this bit: ${description.text}`)}" ${!description.available || active ? "disabled" : ""}><strong>Hear this bit</strong><small>${escapeHtml(description.range)}${description.available ? ` / ${state.auditionLeadInSeconds}s before / ${state.auditionTailSeconds}s after` : ""}</small></button>
+    ${active ? `<button type="button" data-action="stop" data-audition-control="stop" aria-label="Stop selection audition">Stop</button>` : ""}
+  </span>`;
+}
+
+function renderSelectionAuditionSettings(state: AppState): string {
+  return `<section class="selection-audition-settings" aria-label="Audition selection settings">
+    <h3>Hear this bit</h3>
+    <p class="editor-note">${escapeHtml(selectionAuditionDescription(state).text)} Source and selection stay unchanged. Playback starts only when you choose Hear this bit.</p>
+    <label>Lead-in <select id="auditionLeadIn" data-audition-setting="lead" aria-label="Audition lead-in seconds">${[0, 0.5, 1, 2].map(value => `<option value="${value}" ${value === state.auditionLeadInSeconds ? "selected" : ""}>${value}s</option>`).join("")}</select></label>
+    <label>Tail <select id="auditionTail" data-audition-setting="tail" aria-label="Audition tail seconds">${[0, 0.5, 1, 2, 4, 8].map(value => `<option value="${value}" ${value === state.auditionTailSeconds ? "selected" : ""}>${value}s</option>`).join("")}</select></label>
+    ${renderSelectionAuditionButtons(state)}
+  </section>`;
 }
 
 function renderAudioClipProperties(project: ReturnType<typeof currentProject>, clip: Clip): string {
@@ -2489,6 +2531,10 @@ function selectedMelodyTrackIndex(track: Track | null) {
 function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   const guitarTrack = project.tracks.find((track) => track.role === "guitar");
   const inactive = !pcs.guitarEnabled || guitarTrack?.active === false;
+  const campfire = pcs.guitarTone === "campfire_acoustic";
+  const automaticCampfire = campfire && section.guitarPerformance === "strum_pick";
+  const exactImported = !automaticCampfire && section.richEvents.guitar.some(event => !event.compactMirror && event.sound === "campfire_acoustic");
+  const highPickingBlocked = campfire && Object.values(pcs.sections).some(part => part.guitarPerformance === "strum_pick");
   return `
     <div class="sequencer-block ${inactive ? "muted-editor" : ""}" data-step-grid="true" role="group" aria-label="Guitar sequencer">
       <strong>Guitar</strong>
@@ -2496,12 +2542,12 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
         <label class="inline-toggle" title="Enable or mute generated guitar playback for this Chordsmith source."><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""} title="Enable or mute generated guitar playback for this Chordsmith source."> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">
-            ${POCKET_GUITAR_TONES.map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
+            ${[...POCKET_GUITAR_TONES,...POCKET_PREPARED_GUITAR_TONES].map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
           </select>
         </label>
         <label>Register
           <select data-guitar-setting="guitarRegister">
-            ${POCKET_GUITAR_REGISTERS.map((register) => `<option value="${register}" ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
+            ${POCKET_GUITAR_REGISTERS.map((register) => `<option value="${register}" ${register === "high" && highPickingBlocked ? "disabled" : ""} ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
           </select>
         </label>
         <label>Strum
@@ -2510,15 +2556,22 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
           </select>
         </label>
         <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, DEFAULT_STEM_MIX.guitar.volume, 0, 1)}"></label>
+        <label>Performance
+          <select data-guitar-performance="${section.id}" aria-describedby="guitar-performance-note-${section.id}">
+            <option value="grid" ${automaticCampfire ? "" : "selected"}>Grid</option>
+            <option value="strum_pick" ${!campfire || pcs.guitarRegister === "high" ? "disabled" : ""} ${automaticCampfire ? "selected" : ""}>Campfire strum + pick</option>
+          </select>
+        </label>
       </div>
+      <p class="muted" id="guitar-performance-note-${section.id}">${automaticCampfire ? "Strum + pick follows the chords. Your stored grid and imported notes are retained; choose Grid to restore them." : exactImported ? "Exact imported guitar notes retain their pitches, voices and timing. Choosing a rhythm preset replaces that part using the selected Tone; Undo restores it." : campfire ? "Full acoustic voicings. Chug/scratch use a natural pluck; seventh/sus compact chords use triads. Exact imported pitches are retained." : "Campfire strum + pick is available with Campfire Acoustic in Low or Mid register."}</p>
       ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>pattern</span>
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const art = section.guitarPattern[actualStep] || "off";
+          const {art, disabled, hint} = guitarStepDisplay(pcs, section, actualStep);
           const on = art !== "off";
-          return `<button class="step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          return `<button class="step guitar-step ${on ? "on" : ""}" ${disabled ? "disabled" : ""} ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}${hint}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -2591,7 +2644,7 @@ function renderLowerDockBody(state: AppState, project: ReturnType<typeof current
   if (tab === "automation") return renderLowerDockAutomation(project, selectedTrack);
   if (tab === "piano-roll") return renderLowerDockPianoRoll(project, state);
   if (tab === "audio-editor") return renderLowerDockAudioEditor(project, state);
-  if (tab === "export-details") return renderLowerDockExportDetails(project);
+  if (tab === "export-details") return renderLowerDockExportDetails(project, state);
   return `<div class="lower-dock-body mixer-strips">${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}</div>`;
 }
 
@@ -2752,7 +2805,7 @@ function renderLowerDockAudioEditor(project: ReturnType<typeof currentProject>, 
   `;
 }
 
-function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>): string {
+function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>, state: AppState): string {
   const stems = createStemExportPlan(project);
   const loops = createSectionLoopMetadata(project);
   const enabledProfiles = project.exportProfiles.filter((profile) => profile.enabled);
@@ -2761,7 +2814,9 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
   const sharedPortability = verifySharedMediaPortability(createPortableMediaProject(project));
   const deliveryTargets = createGamePackDeliveryTargets();
   return `
-    <div class="lower-dock-body lower-dock-detail lower-dock-export">
+    <div class="lower-dock-body lower-dock-detail lower-dock-export" data-scroll-key="export-details" tabindex="0" aria-label="Finish and export details">
+      ${renderFinishComparison(state)}
+      <div data-delivery-qc-host="dock">${renderDeliveryQc(state)}</div>
       <section class="dock-track-context">
         <h3>${escapeHtml(project.project.title || "Untitled project")}</h3>
         <p>${project.timeline.bars} bars / ${project.project.bpm} BPM / ${project.project.sampleRate} Hz</p>
@@ -2824,6 +2879,54 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
       </section>
     </div>
   `;
+}
+
+function renderFinishComparison(state: AppState): string {
+  const finish = state.finishComparison;
+  const available = finish.phase === "ready" || finish.phase === "playing";
+  const recording = state.midiInputStartPending || ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+  const preset = FINISH_PRESETS.find(item => item.id === finish.presetId)!;
+  return `<section class="finish-comparison" aria-labelledby="finishHeading">
+    <h3 id="finishHeading">Finish &amp; Compare</h3>
+    <label>Starting point <select data-finish-preset data-finish-focus="preset" ${finish.phase === "preparing" ? "disabled" : ""}>${FINISH_PRESETS.map(item => `<option value="${item.id}" ${item.id === finish.presetId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select></label>
+    <details data-finish-examples><summary data-finish-focus="examples">What to listen for</summary><p>${escapeHtml(preset.cue)}</p><p>These playable examples use your selected passage and the selected starting point. They prepare temporary audio, then play only when requested. They cannot be applied or saved over the project. A/B keeps the same position; matched monitor gain never changes your exported mix.</p><div class="finish-actions"><button data-action="finish-example-a" data-finish-focus="example-a" ${recording ? "disabled" : ""}>Hear original example</button><button data-action="finish-example-b" data-finish-focus="example-b" ${recording ? "disabled" : ""}>Hear proposed example</button></div></details>
+    <p>${escapeHtml(finish.rangeLabel || "Uses the selected edit range or clips, with the visible Hear this bit lead-in and tail settings.")}</p>
+    <div class="finish-actions">
+      <button data-action="finish-prepare" data-finish-focus="prepare" ${recording || finish.phase === "preparing" ? "disabled" : ""}>Prepare comparison</button>
+      <button data-action="finish-a" data-finish-focus="a" aria-pressed="${finish.side === "a" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>A · Original</button>
+      <button data-action="finish-b" data-finish-focus="b" aria-pressed="${finish.side === "b" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>B · Proposed</button>
+      <button data-action="finish-stop" data-finish-focus="stop" ${["playing", "preparing"].includes(finish.phase) ? "" : "disabled"}>Stop</button>
+      <button data-action="finish-apply" data-finish-focus="apply" ${finish.phase === "ready" && !recording && !finish.example ? "" : "disabled"}>Apply proposed</button>
+      <button data-action="finish-discard" data-finish-focus="discard" ${finish.phase !== "idle" ? "" : "disabled"}>Discard</button>
+      <button data-action="undo" data-finish-focus="undo" ${state.undoStack.past.length && !finish.example ? "" : "disabled"}>Undo last edit</button>
+    </div>
+    <p role="status" aria-live="polite">${escapeHtml(finish.message)}</p>
+    ${finish.readings.length ? `<ul>${finish.readings.map(reading => `<li>${escapeHtml(reading)}</li>`).join("")}</ul>` : ""}
+    ${finish.warnings.length ? `<ul class="finish-warnings">${finish.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+    <small>Offline estimates for this rendered passage. Export normalization and encoding can change the final file; check decoded delivery output separately.</small>
+  </section>`;
+}
+
+export function renderDeliveryQc(state: AppState): string {
+  const qc = state.deliveryQc;
+  const busy = state.playing || ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+  const analysis = qc.analysis;
+  const number = (value: number | null | undefined, suffix: string) => value === null || value === undefined ? "unavailable" : `${value.toFixed(1)} ${suffix}`;
+  return `<section class="delivery-qc" aria-label="Last WAV check">
+    <h3>Last WAV check</h3>
+    ${qc.fileName ? `<p><strong>${escapeHtml(qc.fileName)}</strong> · ${Math.round(qc.bytes / 1024)} KB · ${escapeHtml(qc.projectTitle)}</p>` : ""}
+    <p role="status" aria-live="polite">${escapeHtml(qc.message)}</p>
+    ${qc.projectChanged ? `<p>The project has changed since this download. Export again to check the current mix.</p>` : ""}
+    ${analysis ? `<p>${analysis.measurements.sampleRate} Hz · ${analysis.measurements.channelCount === 1 ? "mono" : "stereo"} · ${analysis.bitDepth}-bit${analysis.bitDepth === 32 ? " float" : " PCM"} · ${analysis.measurements.durationSeconds.toFixed(3)} s · ${analysis.frameCount} frames</p>
+      <p>Estimated integrated loudness: <strong>${number(analysis.measurements.integratedLufs, "LUFS")}</strong> · estimated true peak: <strong>${number(analysis.measurements.truePeakDbtp, "dBTP")}</strong></p>
+      ${analysis.byteSha256 ? `<details><summary>File identity</summary><code>SHA-256 ${escapeHtml(analysis.byteSha256)}</code></details>` : ""}
+      ${qc.warnings.length ? `<ul class="finish-warnings">${qc.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : "<p>No measured warning threshold was crossed. Review the estimates against your delivery target.</p>"}` : ""}
+    <div class="finish-actions">
+      <button data-action="delivery-qc-cancel" data-delivery-qc-control="cancel" ${qc.phase === "analysing" ? "" : "disabled"}>Cancel check</button>
+      <button data-action="delivery-qc-start" data-delivery-qc-control="start" ${qc.canRetry && !busy ? "" : "disabled"}>Check WAV</button>
+      <button data-action="delivery-qc-report" data-delivery-qc-control="report" ${qc.phase === "ready" ? "" : "disabled"}>Save audio report</button>
+    </div>
+  </section>`;
 }
 
 function renderFullSongWavExportProfileControls(project: ReturnType<typeof currentProject>): string {
@@ -3155,6 +3258,7 @@ function renderFilePanel(state: AppState): string {
             </div>
           ` : ""}
           <p class="file-note">Full mix, stem, section-loop and game-pack exports render real audio into deterministic pack paths.</p>
+            <div data-delivery-qc-host="file">${renderDeliveryQc(state)}</div>
         </section>
         <section class="file-window-section" aria-labelledby="file-media-title">
           <div>
@@ -3808,7 +3912,7 @@ function renderInputSelector(project: ReturnType<typeof currentProject> | null, 
   `;
 }
 
-function renderAddTrackPanel(state: AppState): string {
+export function renderAddTrackPanel(state: AppState): string {
   const project = currentProject(state);
   const audioTracks = project.tracks.filter((track) => track.trackType === "audio");
   const recentRank = new Map(state.sampleLibrary.recentIds.map((id, index) => [id, index]));

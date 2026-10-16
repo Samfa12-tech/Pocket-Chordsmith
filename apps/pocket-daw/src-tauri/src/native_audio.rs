@@ -1,3 +1,7 @@
+use crate::campfire_acoustic::{
+    EventSpec as CampfireEventSpec, NoteBank as CampfireNoteBank,
+    PreparedEvent as PreparedCampfireEvent, TailPolicy as CampfireTailPolicy,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,7 +22,7 @@ use crate::vst3_session::{
     Vst3GraphService, MAX_HOSTED_LATENCY_SAMPLES, MAX_HOSTED_TAIL_SAMPLES, VST3_BLOCK_FRAMES,
 };
 
-type NativeAudioState = Mutex<NativeAudioRuntime>;
+pub(crate) type NativeAudioState = Mutex<NativeAudioRuntime>;
 const CHORDSMITH_SIDECHAIN_ATTACK_SECONDS: f64 = 0.012;
 const CHORDSMITH_SIDECHAIN_RELEASE_SECONDS: f64 = 0.22;
 const CHORDSMITH_SIDECHAIN_DEPTH: f64 = 0.72;
@@ -55,6 +59,19 @@ pub struct NativeAudioRuntime {
     last_error: Option<String>,
     device_name: Option<String>,
     host_name: Option<String>,
+    startup_timings: Option<NativeStartupStageTimings>,
+}
+
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeStartupStageTimings {
+    stop_ms: f64,
+    device_ms: f64,
+    playback_build_ms: f64,
+    stream_build_ms: f64,
+    worker_start_ms: f64,
+    stream_play_ms: f64,
+    total_ms: f64,
 }
 
 const NATIVE_OUTPUT_RING_SAMPLES: usize = 1 << 16;
@@ -307,9 +324,13 @@ pub struct NativeAudioStartPayload {
     #[serde(rename = "projectTitle")]
     project_title: Option<String>,
     #[serde(rename = "sampleRate", default)]
-    sample_rate: u32,
+    pub(crate) sample_rate: u32,
     #[serde(rename = "startSeconds")]
     start_seconds: f64,
+    #[serde(default)]
+    audition: Option<NativeAuditionBounds>,
+    #[serde(rename = "monitorComparison", default)]
+    monitor_comparison: Option<NativeMonitorComparisonPayload>,
     #[serde(default = "default_bpm")]
     bpm: f64,
     #[serde(rename = "timeSig", default = "default_time_sig")]
@@ -336,6 +357,181 @@ pub struct NativeAudioStartPayload {
     samplers: Vec<NativeSamplerDevicePayload>,
     #[serde(rename = "hostedInstruments", default)]
     hosted_instruments: Vec<HostedInstancePayload>,
+}
+
+#[derive(Clone, Deserialize)]
+struct NativeAuditionBounds {
+    #[serde(rename = "endSeconds")]
+    end_seconds: f64,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeMonitorSide {
+    A,
+    B,
+}
+
+#[derive(Clone, Deserialize)]
+struct NativeMonitorComparisonPayload {
+    #[serde(rename = "aTrackId")]
+    a_track_id: String,
+    #[serde(rename = "bTrackId")]
+    b_track_id: String,
+    #[serde(rename = "aGain")]
+    a_gain: f32,
+    #[serde(rename = "bGain")]
+    b_gain: f32,
+    side: NativeMonitorSide,
+}
+
+struct NativeMonitorComparison {
+    last_sequence: u64,
+    a_index: usize,
+    b_index: usize,
+    a_gain: f32,
+    b_gain: f32,
+    blend: f32,
+    target_blend: f32,
+    ramp_frames: usize,
+}
+
+impl NativeMonitorComparison {
+    fn switch(&mut self, side: NativeMonitorSide, sample_rate: u32) {
+        self.target_blend = match side {
+            NativeMonitorSide::A => 0.0,
+            NativeMonitorSide::B => 1.0,
+        };
+        self.ramp_frames = ((sample_rate as f64 * 0.01).round() as usize).max(1);
+    }
+
+    fn next_gains(&mut self) -> (usize, usize, f32, f32) {
+        if self.ramp_frames > 0 {
+            self.blend += (self.target_blend - self.blend) / self.ramp_frames as f32;
+            self.ramp_frames -= 1;
+            if self.ramp_frames == 0 {
+                self.blend = self.target_blend;
+            }
+        }
+        (
+            self.a_index,
+            self.b_index,
+            self.a_gain * (1.0 - self.blend),
+            self.b_gain * self.blend,
+        )
+    }
+}
+
+fn validate_monitor_comparison(
+    payload: &NativeAudioStartPayload,
+) -> Result<Option<NativeMonitorComparison>, String> {
+    let Some(comparison) = payload.monitor_comparison.as_ref() else {
+        return Ok(None);
+    };
+    if payload.audition.is_none()
+        || payload.loop_region.is_some()
+        || payload.metronome.is_some()
+        || payload.sidechain.is_some()
+        || !payload.events.is_empty()
+        || !payload.fx_chains.is_empty()
+        || !payload.hosted_instruments.is_empty()
+        || !payload.samplers.is_empty()
+        || payload.tracks.len() != 2
+        || payload.regions.len() != 2
+        || comparison.a_track_id == comparison.b_track_id
+        || !comparison.a_gain.is_finite()
+        || !(0.0..=1.0).contains(&comparison.a_gain)
+        || !comparison.b_gain.is_finite()
+        || !(0.0..=1.0).contains(&comparison.b_gain)
+    {
+        return Err("Monitor comparison requires two prepared PCM tracks, bounded audition and attenuation-only gains.".to_string());
+    }
+    for track in &payload.tracks {
+        if track.volume != 1.0
+            || track.pan != 0.0
+            || track.mute
+            || track.solo
+            || track.is_return
+            || !track.sends.is_empty()
+            || track.fx_chain_id.is_some()
+        {
+            return Err(
+                "Monitor comparison tracks must use a neutral rendered-audio path.".to_string(),
+            );
+        }
+        let regions = payload
+            .regions
+            .iter()
+            .filter(|region| region.track_id == track.id)
+            .collect::<Vec<_>>();
+        if regions.len() != 1
+            || regions[0].gain != 1.0
+            || regions[0].pan != 0.0
+            || regions[0].start_time != 0.0
+            || regions[0].source_offset != 0.0
+            || regions[0].phase_multiplier != 1.0
+            || regions[0].reversed
+            || regions[0].playback_rate != 1.0
+            || regions[0].fade_in != 0.0
+            || regions[0].fade_out != 0.0
+            || !regions[0].gain_automation.is_empty()
+        {
+            return Err(
+                "Monitor comparison requires one globally aligned unity-gain asset per track."
+                    .to_string(),
+            );
+        }
+    }
+    let a_index = payload
+        .tracks
+        .iter()
+        .position(|track| track.id == comparison.a_track_id)
+        .ok_or("Monitor comparison Original track is missing.")?;
+    let b_index = payload
+        .tracks
+        .iter()
+        .position(|track| track.id == comparison.b_track_id)
+        .ok_or("Monitor comparison Proposed track is missing.")?;
+    let blend = match comparison.side {
+        NativeMonitorSide::A => 0.0,
+        NativeMonitorSide::B => 1.0,
+    };
+    Ok(Some(NativeMonitorComparison {
+        last_sequence: 0,
+        a_index,
+        b_index,
+        a_gain: comparison.a_gain,
+        b_gain: comparison.b_gain,
+        blend,
+        target_blend: blend,
+        ramp_frames: 0,
+    }))
+}
+
+fn validate_audition_bounds(
+    bounds: Option<NativeAuditionBounds>,
+    start_seconds: f64,
+    sample_rate: u32,
+) -> Result<Option<NativeAuditionBounds>, String> {
+    let Some(mut bounds) = bounds else {
+        return Ok(None);
+    };
+    if !start_seconds.is_finite()
+        || start_seconds < 0.0
+        || !bounds.end_seconds.is_finite()
+        || bounds.end_seconds <= start_seconds
+        || bounds.end_seconds - start_seconds > 120.0
+    {
+        return Err(
+            "Audition must have a finite positive range of at most 120 seconds.".to_string(),
+        );
+    }
+    let rate = sample_rate.max(1) as f64;
+    bounds.end_seconds = (bounds.end_seconds * rate).round() / rate;
+    if bounds.end_seconds <= start_seconds {
+        return Err("Audition range must contain at least one output frame.".to_string());
+    }
+    Ok(Some(bounds))
 }
 
 fn default_bpm() -> f64 {
@@ -514,6 +710,8 @@ pub struct NativeRenderedEvent {
     #[serde(rename = "midiNotes", default)]
     midi_notes: Vec<f64>,
     velocity: f64,
+    #[serde(rename = "clipGain")]
+    clip_gain: Option<f64>,
     step: Option<f64>,
     pan: Option<f64>,
     instrument: Option<String>,
@@ -762,6 +960,10 @@ pub struct NativeTrackControlPatch {
 
 #[derive(Clone, Serialize)]
 pub struct NativeAudioStatus {
+    #[serde(rename = "startupTimings", skip_serializing_if = "Option::is_none")]
+    startup_timings: Option<NativeStartupStageTimings>,
+    #[serde(rename = "monitorComparisonVersion")]
+    monitor_comparison_version: u32,
     backend: String,
     available: bool,
     active: bool,
@@ -858,13 +1060,13 @@ pub struct NativeOutputDiagnostics {
 #[derive(Serialize)]
 pub struct NativeAudioRenderedWav {
     #[serde(rename = "sampleRate")]
-    sample_rate: u32,
-    channels: u16,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
     #[serde(rename = "durationSeconds")]
-    duration_seconds: f64,
+    pub(crate) duration_seconds: f64,
     #[serde(rename = "sizeBytes")]
-    size_bytes: usize,
-    bytes: Vec<u8>,
+    pub(crate) size_bytes: usize,
+    pub(crate) bytes: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -876,8 +1078,11 @@ enum NativeAudioRenderMode {
 
 struct PlaybackShared {
     project_title: Option<String>,
+    audition: Option<NativeAuditionBounds>,
+    monitor_comparison: Option<NativeMonitorComparison>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
+    campfire_events: HashMap<String, Arc<PreparedCampfireEvent>>,
     compiled_sampler_routes: Vec<Option<CompiledSamplerEventRoute>>,
     compiled_sidechain_triggers: Vec<CompiledSidechainTrigger>,
     compiled_sidechain_trigger_source_len: usize,
@@ -923,6 +1128,7 @@ struct CompiledAudioRegion {
 struct CompiledGeneratedEventRoute {
     track_index: usize,
     drum_lane: Option<String>,
+    campfire: Option<Arc<PreparedCampfireEvent>>,
 }
 
 struct CompiledSamplerEventRoute {
@@ -1200,6 +1406,46 @@ fn render_native_audio_wav_on_worker(
     bit_depth: Option<u16>,
     state: &NativeAudioState,
 ) -> Result<NativeAudioRenderedWav, String> {
+    render_native_audio_wav_with_cancel(
+        payload,
+        duration_seconds,
+        render_mode,
+        bit_depth,
+        state,
+        None,
+    )
+}
+
+pub(crate) fn render_finish_preview_on_worker(
+    payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    state: &NativeAudioState,
+    cancelled: &AtomicBool,
+) -> Result<NativeAudioRenderedWav, String> {
+    render_native_audio_wav_with_cancel(
+        payload,
+        duration_seconds,
+        Some("mix-exact".into()),
+        Some(32),
+        state,
+        Some(cancelled),
+    )
+}
+
+fn render_native_audio_wav_with_cancel(
+    mut payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    render_mode: Option<String>,
+    bit_depth: Option<u16>,
+    state: &NativeAudioState,
+    cancelled: Option<&AtomicBool>,
+) -> Result<NativeAudioRenderedWav, String> {
+    if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err("Finish preparation cancelled.".into());
+    }
+    // Audition is a monitor control, never exported processing or duration.
+    payload.audition = None;
+    payload.monitor_comparison = None;
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
@@ -1218,11 +1464,12 @@ fn render_native_audio_wav_on_worker(
     let generation = runtime.generation;
     let mut playback = runtime.build_playback(payload, sample_rate, 2, generation)?;
     drop(runtime);
-    render_playback_to_wav(
+    render_playback_to_wav_cancellable(
         &mut playback,
         duration_seconds,
         parse_render_mode(render_mode.as_deref()),
         sanitize_offline_bit_depth(bit_depth),
+        cancelled,
     )
 }
 
@@ -1294,12 +1541,12 @@ pub fn native_audio_seek(
 #[tauri::command]
 pub fn native_audio_stop(
     state: tauri::State<'_, NativeAudioState>,
+    retain_decoded_assets: Option<bool>,
 ) -> Result<NativeAudioStatus, String> {
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
-    runtime.stop();
-    runtime.clear_decoded_asset_cache();
+    runtime.stop_with_cache_policy(retain_decoded_assets.unwrap_or(false));
     Ok(runtime.status())
 }
 
@@ -1313,6 +1560,9 @@ pub fn native_audio_update_track(
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
+            if playback.monitor_comparison.is_some() {
+                return Err("Stop prepared comparison before changing mixer controls.".to_string());
+            }
             let changed = playback.tracks.get(&patch.track_id).is_some_and(|track| {
                 patch
                     .volume
@@ -1362,9 +1612,60 @@ pub fn native_audio_update_track(
     Ok(runtime.status())
 }
 
+#[tauri::command]
+pub fn native_audio_compare_monitor(
+    side: NativeMonitorSide,
+    expected_generation: u64,
+    sequence: u64,
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
+    let runtime = state
+        .lock()
+        .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    switch_monitor_comparison(&runtime, side, expected_generation, sequence)?;
+    Ok(runtime.status())
+}
+
+fn switch_monitor_comparison(
+    runtime: &NativeAudioRuntime,
+    side: NativeMonitorSide,
+    expected_generation: u64,
+    sequence: u64,
+) -> Result<(), String> {
+    if runtime.generation != expected_generation {
+        return Err("Monitor comparison was superseded by another playback request.".to_string());
+    }
+    let shared = runtime
+        .shared
+        .as_ref()
+        .ok_or("No active monitor comparison.")?;
+    let mut playback = shared
+        .lock()
+        .map_err(|_| "Native playback lock was poisoned.".to_string())?;
+    let rate = playback.sample_rate;
+    if !playback.playing {
+        return Err("Monitor comparison is stopped.".to_string());
+    }
+    let comparison = playback
+        .monitor_comparison
+        .as_mut()
+        .ok_or("No active monitor comparison.")?;
+    if sequence <= comparison.last_sequence {
+        return Err("Monitor side change was superseded by a newer choice.".into());
+    }
+    comparison.last_sequence = sequence;
+    comparison.switch(side, rate);
+    Ok(())
+}
+
 impl NativeAudioRuntime {
     fn start(&mut self, payload: NativeAudioStartPayload) -> Result<NativeAudioStatus, String> {
+        let began = Instant::now();
+        let mut timing = NativeStartupStageTimings::default();
+        self.startup_timings = None;
         self.stop();
+        timing.stop_ms = began.elapsed().as_secs_f64() * 1000.0;
+        let device_began = Instant::now();
         self.generation = self.generation.saturating_add(1);
 
         let host_id = cpal::available_hosts()
@@ -1385,6 +1686,8 @@ impl NativeAudioRuntime {
         let config = preferred_output_config(&device, &supported_config, payload.sample_rate);
         let channels = config.channels.max(1);
         let sample_rate = config.sample_rate;
+        timing.device_ms = device_began.elapsed().as_secs_f64() * 1000.0;
+        let playback_began = Instant::now();
         let shared = Arc::new(Mutex::new(self.build_playback(
             payload,
             sample_rate,
@@ -1408,6 +1711,8 @@ impl NativeAudioRuntime {
             eprintln!("Pocket DAW native audio stream error: {}", err);
         };
 
+        timing.playback_build_ms = playback_began.elapsed().as_secs_f64() * 1000.0;
+        let stream_began = Instant::now();
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
                 let callback_ring = Arc::clone(&output_ring);
@@ -1451,6 +1756,8 @@ impl NativeAudioRuntime {
         }
         .map_err(|err| format!("Could not build native output stream: {}", err))?;
 
+        timing.stream_build_ms = stream_began.elapsed().as_secs_f64() * 1000.0;
+        let worker_began = Instant::now();
         let render_stop = Arc::new(AtomicBool::new(false));
         let producer_shared = Arc::clone(&shared);
         let producer_ring = Arc::clone(&output_ring);
@@ -1482,7 +1789,8 @@ impl NativeAudioRuntime {
                     if let Ok(mut playback) = producer_shared.lock() {
                         let generation = producer_ring.requested_generation.load(Ordering::Acquire);
                         for output_frame in block.chunks_mut(channels as usize) {
-                            let intentional_silence = !playback.playing;
+                            let intentional_silence = !playback.playing
+                                || audition_finished_at(&playback, playback.position_seconds);
                             let (left, right) = render_next_frame(&mut playback);
                             write_frame(&mut frame_scratch, left, right);
                             let next_position_seconds = playback.position_seconds;
@@ -1520,6 +1828,8 @@ impl NativeAudioRuntime {
             })
             .map_err(|_| "Could not start the native render worker.".to_string())?;
 
+        timing.worker_start_ms = worker_began.elapsed().as_secs_f64() * 1000.0;
+        let play_began = Instant::now();
         if let Err(err) = stream.play() {
             render_stop.store(true, Ordering::Release);
             let _ = render_thread.join();
@@ -1533,6 +1843,9 @@ impl NativeAudioRuntime {
         self.device_name = Some(device_name);
         self.host_name = Some(host_name);
         self.last_error = None;
+        timing.stream_play_ms = play_began.elapsed().as_secs_f64() * 1000.0;
+        timing.total_ms = began.elapsed().as_secs_f64() * 1000.0;
+        self.startup_timings = Some(timing);
         Ok(self.status())
     }
 
@@ -1543,6 +1856,9 @@ impl NativeAudioRuntime {
         channels: u16,
         generation: u64,
     ) -> Result<PlaybackShared, String> {
+        let monitor_comparison = validate_monitor_comparison(&payload)?;
+        let audition =
+            validate_audition_bounds(payload.audition.clone(), payload.start_seconds, sample_rate)?;
         let mut hosted_payloads = payload.hosted_instruments.clone();
         hosted_payloads.extend(
             payload
@@ -1656,7 +1972,9 @@ impl NativeAudioRuntime {
             .unwrap_or_default();
         let scratch_track_capacity = tracks.len().max(1);
         let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
-        let compiled_event_routes = compile_generated_event_routes(&events, &track_indices);
+        let campfire_events = prepare_campfire_events(&events, sample_rate)?;
+        let compiled_event_routes =
+            compile_generated_event_routes(&events, &track_indices, &campfire_events);
         let compiled_sampler_routes =
             compile_sampler_event_routes(&events, &payload.samplers, &assets, &track_indices);
         let compiled_sidechain_triggers =
@@ -1665,8 +1983,11 @@ impl NativeAudioRuntime {
         let active_region_capacity = regions.len();
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
+            audition,
+            monitor_comparison,
             events,
             compiled_event_routes,
+            campfire_events,
             compiled_sampler_routes,
             compiled_sidechain_triggers,
             compiled_sidechain_trigger_source_len,
@@ -1680,7 +2001,11 @@ impl NativeAudioRuntime {
             fx,
             hosted_instruments,
             hosted_graph,
-            loop_region: sanitize_loop_region(payload.loop_region),
+            loop_region: if payload.audition.is_some() {
+                None
+            } else {
+                sanitize_loop_region(payload.loop_region)
+            },
             metronome: sanitize_metronome(payload.metronome),
             sidechain: payload.sidechain,
             position_seconds: payload.start_seconds.max(0.0),
@@ -1844,6 +2169,13 @@ impl NativeAudioRuntime {
         );
     }
 
+    fn stop_with_cache_policy(&mut self, retain_decoded_assets: bool) {
+        self.stop();
+        if !retain_decoded_assets {
+            self.clear_decoded_asset_cache();
+        }
+    }
+
     fn clear_decoded_asset_cache(&mut self) {
         self.asset_cache.clear();
         self.asset_cache_bytes = 0;
@@ -1886,10 +2218,17 @@ impl NativeAudioRuntime {
                 );
                 let stream_failed = output_diagnostics.stream_failed;
                 return NativeAudioStatus {
+                    startup_timings: self.startup_timings.clone(),
+                    monitor_comparison_version: 2,
                     backend: "native-cpal".to_string(),
                     available: true,
                     active: !stream_failed,
-                    playing: playback.playing && !stream_failed,
+                    playing: playback.playing
+                        && !stream_failed
+                        && !audition_finished_at(
+                            &playback,
+                            output_diagnostics.consumed_position_seconds,
+                        ),
                     position_seconds: output_diagnostics.consumed_position_seconds,
                     event_count: playback.events.len(),
                     sample_rate: playback.sample_rate,
@@ -1942,6 +2281,8 @@ impl NativeAudioRuntime {
             }
         }
         NativeAudioStatus {
+            startup_timings: self.startup_timings.clone(),
+            monitor_comparison_version: 2,
             backend: "native-cpal".to_string(),
             available: true,
             active: false,
@@ -2040,6 +2381,8 @@ fn is_wav_path(path: &Path) -> bool {
 impl NativeAudioStatus {
     fn unavailable(last_error: Option<String>) -> Self {
         Self {
+            startup_timings: None,
+            monitor_comparison_version: 2,
             backend: "native-cpal".to_string(),
             available: false,
             active: false,
@@ -2346,6 +2689,7 @@ fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
 
 fn sanitize_offline_bit_depth(bit_depth: Option<u16>) -> u16 {
     match bit_depth {
+        Some(32) => 32,
         Some(24) => 24,
         _ => 16,
     }
@@ -2417,11 +2761,22 @@ fn parse_render_mode(value: Option<&str>) -> NativeAudioRenderMode {
     }
 }
 
+#[cfg(test)]
 fn render_playback_to_wav(
     playback: &mut PlaybackShared,
     duration_seconds: f64,
     mode: NativeAudioRenderMode,
     bit_depth: u16,
+) -> Result<NativeAudioRenderedWav, String> {
+    render_playback_to_wav_cancellable(playback, duration_seconds, mode, bit_depth, None)
+}
+
+fn render_playback_to_wav_cancellable(
+    playback: &mut PlaybackShared,
+    duration_seconds: f64,
+    mode: NativeAudioRenderMode,
+    bit_depth: u16,
+    cancelled: Option<&AtomicBool>,
 ) -> Result<NativeAudioRenderedWav, String> {
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("Native offline render duration must be positive and finite.".to_string());
@@ -2437,8 +2792,40 @@ fn render_playback_to_wav(
     playback.sample_rate = sample_rate;
     playback.channels = 2;
     let base_frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
+    let campfire_end_frame = match mode {
+        NativeAudioRenderMode::Mix => playback
+            .events
+            .iter()
+            .filter(|event| is_campfire_event(event))
+            .filter(|event| {
+                event.time < duration_seconds
+                    && event.velocity > 0.0
+                    && event.clip_gain.unwrap_or(1.0) > 0.0
+                    && master_gain(playback) > 0.0
+            })
+            .filter(|event| {
+                playback
+                    .tracks
+                    .get(&event.track_id)
+                    .is_some_and(|track| track_gain(track, playback.has_solo) > 0.0)
+                    && !playback.hosted_instruments.contains_key(&event.track_id)
+            })
+            .filter_map(|event| {
+                playback
+                    .campfire_events
+                    .get(&event.id)
+                    .map(|voice| voice.end_frame(event.time))
+            })
+            .max()
+            .unwrap_or(0),
+        _ => 0,
+    };
+    if campfire_end_frame > (MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize {
+        return Err("Complete Campfire tail exceeds the 600-second native render limit. Shorten the render or choose an explicit exact-duration export.".into());
+    }
     let frame_count = match mode {
         NativeAudioRenderMode::Mix => base_frame_count
+            .max(campfire_end_frame)
             .saturating_add(playback.fx.max_tail_samples as usize)
             .saturating_add(
                 playback
@@ -2453,15 +2840,23 @@ fn render_playback_to_wav(
         NativeAudioRenderMode::MixExact | NativeAudioRenderMode::CacheStem => base_frame_count,
     }
     .min((MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize);
+    let campfire_cutoff = match mode {
+        NativeAudioRenderMode::Mix => Some(duration_seconds),
+        _ => None,
+    };
     let bytes = match mode {
         NativeAudioRenderMode::Mix | NativeAudioRenderMode::MixExact => {
             if bit_depth == 32 {
-                render_float32_wav_frames(sample_rate, 2, frame_count, || {
-                    render_next_frame(playback)
-                })?
+                render_float32_wav_frames_cancellable(
+                    sample_rate,
+                    2,
+                    frame_count,
+                    cancelled,
+                    || render_next_frame_with_campfire_cutoff(playback, campfire_cutoff),
+                )?
             } else {
                 render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || {
-                    render_next_frame(playback)
+                    render_next_frame_with_campfire_cutoff(playback, campfire_cutoff)
                 })?
             }
         }
@@ -2490,8 +2885,11 @@ fn prune_cache_stem_events(playback: &mut PlaybackShared) {
             .map(|track| track_gain(track, has_solo) > 0.0001)
             .unwrap_or(false)
     });
-    playback.compiled_event_routes =
-        compile_generated_event_routes(&playback.events, &playback.track_indices);
+    playback.compiled_event_routes = compile_generated_event_routes(
+        &playback.events,
+        &playback.track_indices,
+        &playback.campfire_events,
+    );
     playback.compiled_sidechain_triggers = compile_sidechain_triggers(
         &playback.events,
         playback.sidechain.as_ref(),
@@ -2541,6 +2939,19 @@ fn render_float32_wav_frames<F>(
     sample_rate: u32,
     channels: u16,
     frame_count: usize,
+    next_frame: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut() -> (f32, f32),
+{
+    render_float32_wav_frames_cancellable(sample_rate, channels, frame_count, None, next_frame)
+}
+
+fn render_float32_wav_frames_cancellable<F>(
+    sample_rate: u32,
+    channels: u16,
+    frame_count: usize,
+    cancelled: Option<&AtomicBool>,
     mut next_frame: F,
 ) -> Result<Vec<u8>, String>
 where
@@ -2548,7 +2959,12 @@ where
 {
     let data_len = wav_data_len(frame_count, channels, 4)?;
     let mut bytes = wav_header(sample_rate, channels, 3, 32, data_len)?;
-    for_each_frame_block(frame_count, |block_frames| {
+    let mut remaining = frame_count;
+    while remaining > 0 {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err("Finish preparation cancelled.".into());
+        }
+        let block_frames = remaining.min(NATIVE_AUDIO_BLOCK_FRAMES);
         for _ in 0..block_frames {
             let (left, right) = next_frame();
             bytes.extend_from_slice(&left.to_le_bytes());
@@ -2556,7 +2972,8 @@ where
                 bytes.extend_from_slice(&right.to_le_bytes());
             }
         }
-    });
+        remaining -= block_frames;
+    }
     Ok(bytes)
 }
 
@@ -2770,7 +3187,12 @@ fn render_generated_event_source(
         let (left, right) = render_sampler_event_sample(event, sampler, t)?;
         (left, right, sampler.pan)
     } else {
-        let sample = render_event_sample(event, t);
+        let sample = if let Some(prepared) = route.campfire.as_ref() {
+            prepared.sample_at_timeline_position(t, event.time)
+                * event.clip_gain.unwrap_or(1.0) as f32
+        } else {
+            render_event_sample(event, t)
+        };
         if sample.abs() <= 0.000001 {
             return None;
         }
@@ -2942,7 +3364,24 @@ fn cubic_asset_channel(
 }
 
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
+    render_next_frame_with_campfire_cutoff(playback, None)
+}
+
+fn audition_finished_at(playback: &PlaybackShared, position_seconds: f64) -> bool {
+    playback.audition.as_ref().is_some_and(|bounds| {
+        position_seconds + 0.25 / playback.sample_rate.max(1) as f64 >= bounds.end_seconds
+    })
+}
+
+fn render_next_frame_with_campfire_cutoff(
+    playback: &mut PlaybackShared,
+    campfire_cutoff: Option<f64>,
+) -> (f32, f32) {
     if !playback.playing {
+        return (0.0, 0.0);
+    }
+    if audition_finished_at(playback, playback.position_seconds) {
+        playback.position_seconds = playback.audition.as_ref().unwrap().end_seconds;
         return (0.0, 0.0);
     }
 
@@ -2950,6 +3389,10 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     ensure_compiled_sidechain_triggers(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
+    let monitor_gains = playback
+        .monitor_comparison
+        .as_mut()
+        .map(NativeMonitorComparison::next_gains);
     while playback.scan_start_index < playback.events.len()
         && playback_event_release_end(playback, playback.scan_start_index) < t
     {
@@ -3013,7 +3456,26 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            break;
+            // Use the same sample-grid comparison as prepared PCM lookup.
+            // A seconds-based cutoff can disagree after long-position preroll.
+            // otherwise a nearby legacy event could hide a due Campfire onset.
+            if (event_time * playback.sample_rate.max(1) as f64).floor()
+                > (t * playback.sample_rate.max(1) as f64).round()
+            {
+                break;
+            }
+            if !is_campfire_event(&playback.events[event_index]) {
+                event_index += 1;
+                continue;
+            }
+        }
+        // Ordinary export can extend a started pluck, but the extension must
+        // not admit a new prepared Campfire onset beyond its requested window.
+        if campfire_cutoff.is_some_and(|end| event_time >= end)
+            && is_campfire_event(&playback.events[event_index])
+        {
+            event_index += 1;
+            continue;
         }
         let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
@@ -3065,11 +3527,20 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
-        let track_gain = playback
+        let mut track_gain = playback
             .tracks
             .get(track_id)
             .map(|track| track_gain(track, playback.has_solo) as f32)
             .unwrap_or(0.0);
+        if let Some((a_index, b_index, a_gain, b_gain)) = monitor_gains {
+            track_gain *= if mix.track_index == a_index {
+                a_gain
+            } else if mix.track_index == b_index {
+                b_gain
+            } else {
+                0.0
+            };
+        }
         let pre_fader_left = mix.left;
         let pre_fader_right = mix.right;
         let mut track_left = pre_fader_left * track_gain;
@@ -3086,7 +3557,9 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             add_track_mix(&mut return_mixes, mix.track_index, track_left, track_right);
             continue;
         }
-        (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        if monitor_gains.is_none() {
+            (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        }
         let has_input = track_left.abs().max(track_right.abs()) > 0.00000001;
         let mut send_left = track_left;
         let mut send_right = track_right;
@@ -3158,6 +3631,12 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         (left, right) = chain.process(left, right);
     }
     let master = master_gain(playback);
+    // Monitor-only ending fade. The requested visible tail precedes this final
+    // 10 ms; ordinary playback and exports without audition bounds are unchanged.
+    let audition_gain = playback.audition.as_ref().map_or(1.0, |bounds| {
+        ((bounds.end_seconds - t - 1.0 / playback.sample_rate.max(1) as f64) / 0.01).clamp(0.0, 1.0)
+            as f32
+    });
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
     apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
@@ -3167,9 +3646,14 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     playback.track_mix_scratch = track_mixes;
     playback.return_mix_scratch = return_mixes;
     playback.source_budget_scratch = active_counts_by_track;
+    if monitor_gains.is_some() {
+        // These assets already contain the final native mix/master processing.
+        // Preserve their level and shape instead of applying 0.72/soft_limit twice.
+        return (left * audition_gain, right * audition_gain);
+    }
     (
-        soft_limit(left * 0.72 * master),
-        soft_limit(right * 0.72 * master),
+        soft_limit(left * 0.72 * master) * audition_gain,
+        soft_limit(right * 0.72 * master) * audition_gain,
     )
 }
 
@@ -3342,7 +3826,15 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            break;
+            if (event_time * playback.sample_rate.max(1) as f64).floor()
+                > (t * playback.sample_rate.max(1) as f64).round()
+            {
+                break;
+            }
+            if !is_campfire_event(&playback.events[event_index]) {
+                event_index += 1;
+                continue;
+            }
         }
         let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
@@ -3567,8 +4059,11 @@ fn ensure_compiled_event_routes(playback: &mut PlaybackShared) {
     if playback.compiled_event_routes.len() == playback.events.len() {
         return;
     }
-    playback.compiled_event_routes =
-        compile_generated_event_routes(&playback.events, &playback.track_indices);
+    playback.compiled_event_routes = compile_generated_event_routes(
+        &playback.events,
+        &playback.track_indices,
+        &playback.campfire_events,
+    );
 }
 
 fn ensure_compiled_sidechain_triggers(playback: &mut PlaybackShared) {
@@ -5442,6 +5937,11 @@ fn harmonic_wave_coefficient(wave: &str, harmonic: usize) -> Option<f32> {
 }
 
 fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
+    // This instrument is prepared before the render worker. Never silently
+    // route an unprepared Campfire request through the amplifier recipe.
+    if is_campfire_event(event) {
+        return 0.0;
+    }
     let local = t - event.time;
     if local < 0.0 {
         return 0.0;
@@ -6675,6 +7175,20 @@ fn guitar_tone_config(tone: Option<&str>) -> NativeGuitarToneConfig {
 }
 
 fn event_release_end(event: &NativeRenderedEvent) -> f64 {
+    if is_campfire_event(event) {
+        let count = event.midi_notes.len().clamp(1, 12);
+        let strum = event
+            .technique
+            .as_ref()
+            .and_then(|value| value.get("campfire"))
+            .and_then(|value| value.get("strumSeconds"))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.027)
+            .clamp(0.0, 0.1);
+        // Conservative scan fallback; actual playback uses the prepared exact
+        // frame length below. No pluck may expire at the old note gate.
+        return event.time + 1.5 + (count - 1) as f64 * strum + 0.000125;
+    }
     let base = match event.kind.as_str() {
         "kick" => 0.22,
         "snare" => 0.16,
@@ -6688,6 +7202,14 @@ fn playback_event_release_end(playback: &PlaybackShared, index: usize) -> f64 {
     let Some(event) = playback.events.get(index) else {
         return 0.0;
     };
+    if let Some(prepared) = playback
+        .compiled_event_routes
+        .get(index)
+        .and_then(|route| route.as_ref())
+        .and_then(|route| route.campfire.as_ref())
+    {
+        return prepared.end_seconds(event.time);
+    }
     let Some(route) = playback
         .compiled_sampler_routes
         .get(index)
@@ -6782,6 +7304,7 @@ fn compile_audio_regions(
 fn compile_generated_event_routes(
     events: &[NativeRenderedEvent],
     track_indices: &HashMap<String, usize>,
+    campfire_events: &HashMap<String, Arc<PreparedCampfireEvent>>,
 ) -> Vec<Option<CompiledGeneratedEventRoute>> {
     events
         .iter()
@@ -6790,9 +7313,111 @@ fn compile_generated_event_routes(
             Some(CompiledGeneratedEventRoute {
                 track_index,
                 drum_lane: event.drum_lane.clone(),
+                campfire: if is_campfire_event(event) {
+                    campfire_events.get(&event.id).cloned()
+                } else {
+                    None
+                },
             })
         })
         .collect()
+}
+
+fn is_campfire_event(event: &NativeRenderedEvent) -> bool {
+    event.kind == "guitar" && event.instrument.as_deref() == Some("campfire_acoustic")
+}
+
+fn prepare_campfire_events(
+    events: &[NativeRenderedEvent],
+    sample_rate: u32,
+) -> Result<HashMap<String, Arc<PreparedCampfireEvent>>, String> {
+    let mut prepared = HashMap::new();
+    if !events.iter().any(is_campfire_event) {
+        return Ok(prepared);
+    }
+    let mut bank = CampfireNoteBank::new(sample_rate, 64 * 1024 * 1024)?;
+    for event in events.iter().filter(|event| is_campfire_event(event)) {
+        if event
+            .clip_gain
+            .is_some_and(|gain| !gain.is_finite() || !(0.0..=4.0).contains(&gain))
+        {
+            return Err("Campfire clip gain must be finite and from 0 to 4.".into());
+        }
+        if !event.time.is_finite() || event.time < 0.0 {
+            return Err("Campfire event time must be finite and nonnegative.".into());
+        }
+        if prepared.contains_key(&event.id) {
+            return Err("Campfire generated event IDs must be unique.".into());
+        }
+        let source_notes = if event.midi_notes.is_empty() {
+            vec![event.midi.ok_or("Campfire needs explicit MIDI notes.")?]
+        } else {
+            event.midi_notes.clone()
+        };
+        if source_notes
+            .iter()
+            .any(|midi| !midi.is_finite() || midi.fract() != 0.0 || !(36.0..=96.0).contains(midi))
+        {
+            return Err("Campfire requires integer MIDI pitches from 36 to 96.".into());
+        }
+        let performance = event
+            .technique
+            .as_ref()
+            .and_then(|value| value.get("campfire"));
+        if performance.is_some_and(|value| !value.is_object()) {
+            return Err("Campfire technique must be an object.".into());
+        }
+        if performance
+            .and_then(|value| value.get("recipeVersion"))
+            .is_some_and(|value| value.as_u64() != Some(1))
+        {
+            return Err(
+                "Unsupported Campfire recipe version; native renderer supports recipe 1.".into(),
+            );
+        }
+        let seed = performance
+            .and_then(|value| value.get("seed"))
+            .map(|value| {
+                value
+                    .as_u64()
+                    .filter(|seed| *seed <= u32::MAX as u64)
+                    .map(|seed| seed as u32)
+                    .ok_or("Campfire seed must be an unsigned 32-bit integer.")
+            })
+            .transpose()?;
+        let tail = match performance
+            .and_then(|value| value.get("tailPolicy"))
+            .map(|value| value.as_str())
+        {
+            None | Some(Some("reference-cut")) => CampfireTailPolicy::ReferenceCut,
+            Some(Some("fade-5ms")) => CampfireTailPolicy::Fade5Ms,
+            _ => return Err("Unsupported Campfire tail policy.".into()),
+        };
+        let up = match event.direction.as_deref() {
+            None | Some("down") => false,
+            Some("up") => true,
+            _ => return Err("Campfire strum direction must be up or down.".into()),
+        };
+        let strum_seconds = performance
+            .and_then(|value| value.get("strumSeconds"))
+            .map(|value| {
+                value
+                    .as_f64()
+                    .ok_or("Campfire strum spacing must be numeric.")
+            })
+            .transpose()?
+            .unwrap_or(0.027);
+        let voice = bank.prepare(CampfireEventSpec {
+            notes: source_notes.iter().map(|midi| *midi as u8).collect(),
+            velocity: event.velocity,
+            up,
+            seed,
+            tail,
+            strum_seconds,
+        })?;
+        prepared.insert(event.id.clone(), Arc::new(voice));
+    }
+    Ok(prepared)
 }
 
 fn compile_sampler_event_routes(
@@ -7391,6 +8016,114 @@ mod tests {
         assert!(runtime.asset_cache.is_empty());
         assert_eq!(runtime.asset_cache_bytes, 0);
         assert_eq!(active_render_asset.samples, expected);
+    }
+
+    #[test]
+    fn ordinary_stop_retains_bounded_cache_but_teardown_releases_it() {
+        let mut runtime = NativeAudioRuntime::default();
+        let asset = NativeAudioAssetPayload {
+            id: "stopped".into(),
+            name: "stopped.wav".into(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".into()),
+            bytes: pcm16_wav(48_000, 2, &[16_384, -16_384]),
+        };
+        let decoded = runtime.decode_or_reuse_asset(&asset).unwrap();
+        let bytes = runtime.asset_cache_bytes;
+        assert!(bytes > 0 && bytes <= MAX_NATIVE_DECODED_ASSET_CACHE_BYTES);
+        runtime.stop_with_cache_policy(true);
+        let metadata = NativeAudioAssetPayload {
+            bytes: vec![],
+            ..asset
+        };
+        assert!(Arc::ptr_eq(
+            &decoded,
+            &runtime.decode_or_reuse_asset(&metadata).unwrap()
+        ));
+        assert_eq!(runtime.asset_cache_bytes, bytes);
+        assert!(!runtime.status().active);
+        runtime.stop_with_cache_policy(false);
+        assert_eq!(runtime.asset_cache_bytes, 0);
+        assert!(runtime.decode_or_reuse_asset(&metadata).is_err());
+    }
+
+    #[test]
+    #[ignore = "explicit bounded native output diagnostic; no microphone"]
+    fn trace_native_warm_start_stages() {
+        let report_path = std::env::var("POCKET_DAW_STARTUP_TRACE_REPORT")
+            .expect("explicit report path required");
+        assert!(!Path::new(&report_path).exists(), "retain earlier evidence");
+        let mut runtime = NativeAudioRuntime::default();
+        let mut payload = monitor_payload();
+        payload.monitor_comparison = None;
+        payload.audition = None;
+        payload.regions.clear();
+        payload.sample_rate = 48_000;
+        let samples = vec![0.0; 48_000 * 12 * 2];
+        let mut preload = Vec::new();
+        for index in 0..3 {
+            let asset = NativeAudioAssetPayload {
+                id: format!("trace-{index}"),
+                name: format!("trace-{index}.wav"),
+                sample_rate: 48_000,
+                channels: 2,
+                duration_seconds: 12.0,
+                source_hash: Some(format!("trace-v1-{index}")),
+                source_path: None,
+                bytes: encode_float32_wav(48_000, 2, &samples).unwrap(),
+            };
+            let began = Instant::now();
+            let serialized = serde_json::to_vec(&serde_json::json!({
+                "id": asset.id, "name": asset.name, "sampleRate": asset.sample_rate,
+                "channels": asset.channels, "durationSeconds": asset.duration_seconds,
+                "sourceHash": asset.source_hash, "bytes": asset.bytes
+            }))
+            .unwrap();
+            let encode_ms = began.elapsed().as_secs_f64() * 1000.0;
+            let parse_began = Instant::now();
+            let parsed: NativeAudioAssetPayload = serde_json::from_slice(&serialized).unwrap();
+            let parse_ms = parse_began.elapsed().as_secs_f64() * 1000.0;
+            let decode_began = Instant::now();
+            runtime.decode_or_reuse_asset(&parsed).unwrap();
+            let decode_ms = decode_began.elapsed().as_secs_f64() * 1000.0;
+            preload.push(
+                serde_json::json!({ "wavBytes": asset.bytes.len(), "jsonBytes": serialized.len(),
+                "rustEncodeMs": encode_ms, "rustParseMs": parse_ms, "decodeMs": decode_ms }),
+            );
+            payload.assets.push(NativeAudioAssetPayload {
+                bytes: vec![],
+                ..asset
+            });
+        }
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            let start = runtime.start(payload.clone()).unwrap();
+            let poll_began = Instant::now();
+            let mut first = runtime.status();
+            while first.output_diagnostics.consumed_frame_count == 0
+                && poll_began.elapsed() < Duration::from_millis(500)
+            {
+                std::thread::sleep(Duration::from_millis(5));
+                first = runtime.status();
+            }
+            let first_frame_observed_ms = poll_began.elapsed().as_secs_f64() * 1000.0;
+            let stop_began = Instant::now();
+            runtime.stop_with_cache_policy(true);
+            let stop_ms = stop_began.elapsed().as_secs_f64() * 1000.0;
+            runs.push(serde_json::json!({ "start": start, "firstNativeFrames": first.output_diagnostics.consumed_frame_count,
+                "firstFrameObservedAfterStartReturnMs": first_frame_observed_ms, "stopMs": stop_ms,
+                "retainedCacheBytes": runtime.asset_cache_bytes }));
+        }
+        runtime.stop_with_cache_policy(false);
+        let report = serde_json::json!({ "scope": "Source-native silent output diagnostic. No installed candidate, WebView IPC, microphone, audible sound, physical latency or hardware listening claim.",
+            "preload": preload, "runs": runs, "clearedCacheBytes": runtime.asset_cache_bytes });
+        std::fs::write(report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+        assert!(runs
+            .iter()
+            .all(|run| run["firstNativeFrames"].as_u64().unwrap() > 0));
     }
 
     #[test]
@@ -9295,6 +10028,245 @@ mod tests {
         assert_eq!(loop_region.end_seconds, 3.0);
     }
 
+    fn monitor_payload() -> NativeAudioStartPayload {
+        serde_json::from_value(serde_json::json!({
+            "projectTitle": "Prepared monitor", "startSeconds": 0.0,
+            "audition": { "endSeconds": 1.0 },
+            "monitorComparison": { "aTrackId": "z-original", "bTrackId": "a-proposed", "aGain": 1.0, "bGain": 0.5, "side": "a" },
+            "tracks": [
+                { "id": "z-original", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false },
+                { "id": "a-proposed", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false }
+            ],
+            "events": [], "fxChains": [], "assets": [],
+            "regions": [
+                { "id": "ar", "assetId": "a", "trackId": "z-original", "startTime": 0.0, "sourceOffset": 0.0, "duration": 1.0, "gain": 1.0, "pan": 0.0 },
+                { "id": "br", "assetId": "b", "trackId": "a-proposed", "startTime": 0.0, "sourceOffset": 0.0, "duration": 1.0, "gain": 1.0, "pan": 0.0 }
+            ]
+        })).unwrap()
+    }
+
+    #[test]
+    fn monitor_comparison_rejects_unbounded_or_processed_paths() {
+        for mutation in 0..10 {
+            let mut payload = monitor_payload();
+            match mutation {
+                0 => payload.audition = None,
+                1 => payload.monitor_comparison.as_mut().unwrap().b_gain = 1.01,
+                2 => payload.monitor_comparison.as_mut().unwrap().a_gain = f32::NAN,
+                3 => payload.regions[0].reversed = true,
+                4 => payload.regions[0].playback_rate = 2.0,
+                5 => payload.regions[0].phase_multiplier = -1.0,
+                6 => payload.regions[0].fade_in = 0.1,
+                7 => payload.tracks[0].volume = 0.9,
+                8 => payload.regions[0].source_offset = 0.1,
+                _ => {
+                    payload.monitor_comparison.as_mut().unwrap().a_track_id = "missing".to_string()
+                }
+            }
+            assert!(
+                validate_monitor_comparison(&payload).is_err(),
+                "mutation {mutation}"
+            );
+        }
+        assert!(validate_monitor_comparison(&monitor_payload())
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn monitor_comparison_preserves_pcm_level_clock_and_phase_across_switches() {
+        for rate in [44_100, 48_000] {
+            let mut runtime = NativeAudioRuntime::default();
+            let mut playback = runtime
+                .build_playback(monitor_payload(), rate, 2, 7)
+                .unwrap();
+            for (id, level) in [("a", 0.2_f32), ("b", 0.4_f32)] {
+                let samples = (0..rate)
+                    .flat_map(|index| {
+                        let value = level * (index as f32 * 0.03).sin();
+                        [value, -value]
+                    })
+                    .collect();
+                playback.assets.insert(
+                    id.to_string(),
+                    Arc::new(DecodedAudioAsset {
+                        sample_rate: rate,
+                        channels: 2,
+                        samples,
+                        frame_count: rate as usize,
+                    }),
+                );
+            }
+            playback.compiled_regions =
+                compile_audio_regions(&playback.regions, &playback.assets, &playback.track_indices);
+            for index in 0..rate / 4 {
+                if index == 100 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::B, rate);
+                }
+                if index == 200 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::A, rate);
+                }
+                if index == 900 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::B, rate);
+                }
+                let (left, right) = render_next_frame(&mut playback);
+                let expected = 0.2 * (index as f32 * 0.03).sin();
+                assert!(
+                    (left - expected).abs() < 0.00001,
+                    "rate {rate}, frame {index}: {left} vs {expected}"
+                );
+                assert!((right + expected).abs() < 0.00001);
+                assert_eq!(playback.rendered_frame_count, index as u64 + 1);
+            }
+            assert!((playback.position_seconds - 0.25).abs() < 1.0 / rate as f64);
+            assert_eq!(playback.generation, 7);
+            assert_eq!(playback.monitor_comparison.as_ref().unwrap().blend, 1.0);
+        }
+    }
+
+    #[test]
+    fn monitor_crossfade_is_ten_ms_linear_and_reverses_from_current_gain() {
+        let mut state = validate_monitor_comparison(&monitor_payload())
+            .unwrap()
+            .unwrap();
+        state.switch(NativeMonitorSide::B, 48_000);
+        for index in 1..=240 {
+            let (_, _, a, b) = state.next_gains();
+            assert!((a - (1.0 - index as f32 / 480.0)).abs() < 0.00001);
+            assert!((b - index as f32 / 960.0).abs() < 0.00001);
+        }
+        state.switch(NativeMonitorSide::A, 48_000);
+        let (_, _, a, _) = state.next_gains();
+        assert!(a > 0.5 && a < 0.502);
+        for _ in 1..480 {
+            state.next_gains();
+        }
+        assert_eq!(state.blend, 0.0);
+    }
+
+    #[test]
+    fn monitor_command_rejects_superseded_generation_and_stopped_playback() {
+        let mut runtime = NativeAudioRuntime {
+            generation: 7,
+            ..NativeAudioRuntime::default()
+        };
+        let playback = runtime
+            .build_playback(monitor_payload(), 48_000, 2, 7)
+            .unwrap();
+        runtime.shared = Some(Arc::new(Mutex::new(playback)));
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::B, 6, 1).is_err());
+        assert_eq!(
+            runtime
+                .shared
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .monitor_comparison
+                .as_ref()
+                .unwrap()
+                .target_blend,
+            0.0
+        );
+        switch_monitor_comparison(&runtime, NativeMonitorSide::B, 7, 2).unwrap();
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7, 1).is_err());
+        let mut shared = runtime.shared.as_ref().unwrap().lock().unwrap();
+        assert_eq!(
+            shared.monitor_comparison.as_ref().unwrap().target_blend,
+            1.0
+        );
+        assert_eq!(shared.position_seconds, 0.0);
+        shared.playing = false;
+        drop(shared);
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7, 3).is_err());
+    }
+
+    #[test]
+    fn native_worker_preserves_requested_float32_format_and_sample_precision() {
+        let mut payload = monitor_payload();
+        payload.sample_rate = 8_000;
+        payload.regions.clear();
+        payload.tracks = vec![test_track("bass", 1.0, 0.0, false, false)];
+        payload.events = vec![test_generated_event("precision", "bass", 0.0, 0.05, 0.001)];
+        let state = Mutex::new(NativeAudioRuntime::default());
+        let actual = render_native_audio_wav_on_worker(
+            payload.clone(),
+            0.1,
+            Some("mix-exact".into()),
+            Some(32),
+            &state,
+        )
+        .unwrap();
+        let mut direct = NativeAudioRuntime::default()
+            .build_playback(
+                {
+                    payload.audition = None;
+                    payload.monitor_comparison = None;
+                    payload
+                },
+                8_000,
+                2,
+                0,
+            )
+            .unwrap();
+        let expected =
+            render_playback_to_wav(&mut direct, 0.1, NativeAudioRenderMode::MixExact, 32).unwrap();
+        assert_eq!(
+            u16::from_le_bytes([actual.bytes[20], actual.bytes[21]]),
+            3,
+            "command adapter must retain IEEE float WAV"
+        );
+        assert_eq!(u16::from_le_bytes([actual.bytes[34], actual.bytes[35]]), 32);
+        assert_eq!(actual.bytes, expected.bytes);
+        assert!(actual.bytes[44..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|chunk| f32::from_le_bytes(*chunk).abs() > 0.000001));
+    }
+
+    #[test]
+    fn preview_render_cancels_at_next_audio_block_without_returning_partial_wav() {
+        let cancelled = AtomicBool::new(false);
+        let mut frames = 0;
+        let result = render_float32_wav_frames_cancellable(
+            48_000,
+            2,
+            48_000 * 300,
+            Some(&cancelled),
+            || {
+                frames += 1;
+                if frames == 17 {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+                (0.1, -0.1)
+            },
+        );
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert_eq!(frames, NATIVE_AUDIO_BLOCK_FRAMES);
+        let mut called = false;
+        assert!(
+            render_float32_wav_frames_cancellable(48_000, 2, 100, Some(&cancelled), || {
+                called = true;
+                (0.0, 0.0)
+            })
+            .is_err()
+        );
+        assert!(!called);
+    }
+
     #[test]
     fn output_config_range_supports_requested_project_sample_rate() {
         assert!(output_config_range_supports_sample_rate(
@@ -9525,9 +10497,12 @@ mod tests {
         let tracks = HashMap::from([("bass".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9598,9 +10573,12 @@ mod tests {
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9672,9 +10650,12 @@ mod tests {
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9776,9 +10757,12 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9876,9 +10860,12 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10008,9 +10995,12 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10104,9 +11094,12 @@ mod tests {
         let tracks = HashMap::from([("bass".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10159,9 +11152,12 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
+            audition: None,
+            monitor_comparison: None,
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10884,6 +11880,692 @@ mod tests {
         assert!(render_sampler_event_sample(&event, &route, 2.65).is_none());
     }
 
+    fn campfire_test_playback(event_time: f64) -> PlaybackShared {
+        let mut event = test_generated_event("campfire", "guitar", event_time, 0.04, 0.8);
+        event.track_id = "guitar".into();
+        event.instrument = Some("campfire_acoustic".into());
+        event.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+        let mut playback = playback_with_events(vec![event]);
+        playback.sample_rate = 8000;
+        playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+        insert_playback_track(&mut playback, test_track("guitar", 1.0, 0.0, false, false));
+        ensure_compiled_event_routes(&mut playback);
+        playback
+    }
+
+    #[test]
+    fn native_campfire_graph_reads_prepared_pcm_and_seeks_into_complete_tail() {
+        let mut playback = campfire_test_playback(0.0);
+        let prepared = Arc::clone(playback.campfire_events.get("campfire").unwrap());
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        let source =
+            render_generated_event_source(&mut playback, 0, 0.0, &mut budget, false).unwrap();
+        let (left, right) = source_pan_gains(0.0);
+        assert_eq!(source.left, prepared.sample(0.0) * left);
+        assert_eq!(source.right, prepared.sample(0.0) * right);
+        assert!(playback_event_release_end(&playback, 0) > 1.58);
+        playback.position_seconds = 1.0;
+        reset_scan_starts(&mut playback);
+        assert_eq!(
+            playback.scan_start_index, 0,
+            "seek must retain a sounding natural tail past the old gate"
+        );
+        let tail = render_frames(&mut playback, 80);
+        assert!(tail
+            .iter()
+            .any(|(left, right)| left.abs() > 0.00001 || right.abs() > 0.00001));
+        prune_cache_stem_events(&mut playback);
+        assert!(
+            Arc::ptr_eq(
+                &prepared,
+                playback.compiled_event_routes[0]
+                    .as_ref()
+                    .unwrap()
+                    .campfire
+                    .as_ref()
+                    .unwrap()
+            ),
+            "cache pruning reuses prepared PCM"
+        );
+    }
+
+    #[test]
+    #[ignore = "Run scripts/verify-native-godot-route.ts to capture real native offline export bytes"]
+    fn native_godot_arranged_export_fixture() {
+        let input = std::env::var("POCKET_DAW_NATIVE_GODOT_INPUT")
+            .expect("The route verifier must provide an input JSON file");
+        let output = std::env::var("POCKET_DAW_NATIVE_GODOT_OUTPUT")
+            .expect("The route verifier must provide an output directory");
+        let request: Value = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+        let payload: NativeAudioStartPayload =
+            serde_json::from_value(request["payload"].clone()).unwrap();
+        let duration = request["durationSeconds"].as_f64().unwrap();
+        assert!(duration.is_finite() && duration > 0.0 && duration <= 30.0);
+        let mut monitor_clock_evidence = Vec::new();
+        let rendered = if request["monitorCapture"].as_bool() == Some(true) {
+            // Offline integration of actual prepared-monitor DSP/commands.
+            // This is a producer-clock capture, not device/consumed PCM.
+            let rate = payload.sample_rate;
+            let mut runtime = NativeAudioRuntime {
+                generation: 17,
+                ..NativeAudioRuntime::default()
+            };
+            let playback = runtime.build_playback(payload, rate, 2, 17).unwrap();
+            let shared = Arc::new(Mutex::new(playback));
+            runtime.shared = Some(shared.clone());
+            let frames = (duration * rate as f64).round() as usize;
+            let schedule = request["switches"].as_array().unwrap();
+            let mut samples = Vec::with_capacity(frames * 2);
+            for frame in 0..frames {
+                for change in schedule
+                    .iter()
+                    .filter(|change| change["frame"].as_u64() == Some(frame as u64))
+                {
+                    let side: NativeMonitorSide =
+                        serde_json::from_value(change["side"].clone()).unwrap();
+                    switch_monitor_comparison(
+                        &runtime,
+                        side,
+                        17,
+                        change["sequence"].as_u64().unwrap(),
+                    )
+                    .unwrap();
+                    let playback = shared.lock().unwrap();
+                    monitor_clock_evidence.push(serde_json::json!({ "frame": frame, "positionSeconds": playback.position_seconds, "renderedFrameCount": playback.rendered_frame_count, "generation": playback.generation }));
+                }
+                let (left, right) = render_next_frame(&mut shared.lock().unwrap());
+                samples.extend_from_slice(&[left, right]);
+            }
+            let bytes = encode_float32_wav(rate, 2, &samples).unwrap();
+            NativeAudioRenderedWav {
+                sample_rate: rate,
+                channels: 2,
+                duration_seconds: frames as f64 / rate as f64,
+                size_bytes: bytes.len(),
+                bytes,
+            }
+        } else {
+            let state = Mutex::new(NativeAudioRuntime::default());
+            render_native_audio_wav_on_worker(
+                payload,
+                duration,
+                request["renderMode"].as_str().map(str::to_owned),
+                request["bitDepth"].as_u64().map(|depth| depth as u16),
+                &state,
+            )
+            .expect("Real native WAV export worker must render the arranged fixture")
+        };
+        let directory = Path::new(&output);
+        std::fs::create_dir_all(directory).unwrap();
+        std::fs::write(directory.join("render.wav"), &rendered.bytes).unwrap();
+        std::fs::write(
+            directory.join("render.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "sampleRate": rendered.sample_rate,
+                "channels": rendered.channels,
+                "durationSeconds": rendered.duration_seconds,
+                "sizeBytes": rendered.size_bytes,
+                "monitorProducerClockEvidence": monitor_clock_evidence,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_audition_stops_on_output_frames_without_ui_polls() {
+        for rate in [44_100, 48_000] {
+            let end_frames = 1001;
+            let end_seconds = end_frames as f64 / rate as f64;
+            let mut original = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+            original.sample_rate = rate;
+            let expected = render_frames(&mut original, end_frames + 100);
+            let mut preview = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+            preview.sample_rate = rate;
+            preview.audition = Some(NativeAuditionBounds { end_seconds });
+            let actual = render_frames(&mut preview, end_frames + 100);
+            let unchanged_frames = end_frames - (rate as f64 * 0.01).ceil() as usize - 1;
+            assert_eq!(&actual[..unchanged_frames], &expected[..unchanged_frames]);
+            assert!(actual[..end_frames]
+                .iter()
+                .any(|frame| frame.0.abs() > 0.00001));
+            assert!(actual[end_frames..]
+                .iter()
+                .all(|frame| *frame == (0.0, 0.0)));
+            assert!(actual[end_frames - 1].0.abs() < 1e-9);
+            assert_eq!(preview.rendered_frame_count, end_frames as u64);
+            assert_eq!(preview.position_seconds, end_seconds);
+        }
+    }
+
+    #[test]
+    fn native_audition_completion_follows_consumed_audio_not_render_ahead() {
+        let mut preview = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        preview.sample_rate = 48_000;
+        preview.audition = Some(NativeAuditionBounds { end_seconds: 0.02 });
+        let _ = render_frames(&mut preview, 2000);
+        let ring = Arc::new(NativeOutputRing::new(0.0));
+        ring.consumed_position_bits
+            .store(0.019_f64.to_bits(), Ordering::Relaxed);
+        let runtime = NativeAudioRuntime {
+            shared: Some(Arc::new(Mutex::new(preview))),
+            output_ring: Some(Arc::clone(&ring)),
+            ..NativeAudioRuntime::default()
+        };
+        assert!(
+            runtime.status().playing,
+            "Queued audible frames have not finished yet"
+        );
+        ring.consumed_position_bits
+            .store(0.02_f64.to_bits(), Ordering::Relaxed);
+        assert!(
+            !runtime.status().playing,
+            "Consumed end completes independently of UI polling"
+        );
+    }
+
+    #[test]
+    fn native_audition_bounds_are_explicit_bounded_and_optional() {
+        assert!(validate_audition_bounds(None, 0.0, 48_000)
+            .unwrap()
+            .is_none());
+        for end in [f64::NAN, f64::INFINITY, 0.0, -1.0, 120.1] {
+            assert!(validate_audition_bounds(
+                Some(NativeAuditionBounds { end_seconds: end }),
+                0.0,
+                48_000
+            )
+            .is_err());
+        }
+        assert!(validate_audition_bounds(
+            Some(NativeAuditionBounds { end_seconds: 2.0 }),
+            f64::NAN,
+            48_000
+        )
+        .is_err());
+        let bounds = validate_audition_bounds(
+            Some(NativeAuditionBounds {
+                end_seconds: 1.234567,
+            }),
+            1.0,
+            48_000,
+        )
+        .unwrap()
+        .unwrap();
+        assert!((bounds.end_seconds * 48_000.0 - (1.234567_f64 * 48_000.0).round()).abs() < 1e-8);
+    }
+
+    #[test]
+    fn native_audition_bounds_cannot_change_export_bytes() {
+        let payload: NativeAudioStartPayload = serde_json::from_value(serde_json::json!({
+            "projectTitle":"Audition export separation", "sampleRate":48000,
+            "startSeconds":0, "bpm":120, "timeSig":4,
+            "tracks":[{"id":"bass","volume":1,"pan":0,"mute":false,"solo":false}],
+            "events":[{"id":"note","kind":"bass","trackId":"bass","time":0,
+                "duration":0.25,"midi":48,"midiNotes":[],"velocity":0.8}],
+            "fxChains":[]
+        }))
+        .unwrap();
+        let state = Mutex::new(NativeAudioRuntime::default());
+        let reference =
+            render_native_audio_wav_on_worker(payload.clone(), 0.3, None, Some(16), &state)
+                .unwrap();
+        let mut monitor_payload = payload;
+        monitor_payload.audition = Some(NativeAuditionBounds { end_seconds: 0.05 });
+        let exported =
+            render_native_audio_wav_on_worker(monitor_payload, 0.3, None, Some(16), &state)
+                .unwrap();
+        assert_eq!(reference.bytes, exported.bytes);
+    }
+
+    #[test]
+    fn native_campfire_clip_gain_is_separate_from_note_velocity_and_reuses_pcm() {
+        let mut playback = campfire_test_playback(0.0);
+        let prepared = Arc::clone(playback.campfire_events.get("campfire").unwrap());
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        let reference =
+            render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).unwrap();
+        for gain in [0.4, 1.0, 4.0] {
+            playback.events[0].clip_gain = Some(gain);
+            let mut budget = TrackSourceBudget::with_capacity(4);
+            let actual =
+                render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).unwrap();
+            assert!((actual.left - reference.left * gain as f32).abs() < 1e-8);
+            assert!((actual.right - reference.right * gain as f32).abs() < 1e-8);
+            assert!(Arc::ptr_eq(
+                &prepared,
+                playback.campfire_events.get("campfire").unwrap()
+            ));
+            assert_eq!(playback.events[0].velocity, 0.8);
+        }
+        assert!(prepare_campfire_events(&playback.events, 8000).is_ok());
+        playback.events[0].clip_gain = Some(0.0);
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        assert!(render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).is_none());
+        for invalid in [f64::NAN, f64::INFINITY, -0.01, 4.01] {
+            playback.events[0].clip_gain = Some(invalid);
+            assert!(prepare_campfire_events(&playback.events, 8000)
+                .is_err_and(|error| error.contains("clip gain")));
+        }
+    }
+
+    #[test]
+    fn native_campfire_full_stereo_graph_is_invariant_at_later_onsets_and_tail_seeks() {
+        fn retain_capture(
+            rate: u32,
+            onset: usize,
+            offset: i64,
+            label: &str,
+            frames: &[(f32, f32)],
+        ) {
+            if let Ok(directory) = std::env::var("POCKET_DAW_NATIVE_CAMPFIRE_PARITY_DIR") {
+                let directory = std::path::Path::new(&directory);
+                std::fs::create_dir_all(directory).unwrap();
+                let bytes = frames
+                    .iter()
+                    .flat_map(|(left, right)| [left.to_le_bytes(), right.to_le_bytes()].concat())
+                    .collect::<Vec<_>>();
+                let suffix = if label.is_empty() {
+                    String::new()
+                } else {
+                    format!("-{label}")
+                };
+                std::fs::write(
+                    directory.join(format!("{rate}-{onset}-{offset}{suffix}.f32")),
+                    bytes,
+                )
+                .unwrap();
+            }
+        }
+        fn fixture(rate: u32, onset_frame: usize) -> PlaybackShared {
+            let mut playback = campfire_test_playback(onset_frame as f64 / rate as f64);
+            playback.sample_rate = rate;
+            playback.events[0].pan = Some(-0.3);
+            playback.campfire_events = prepare_campfire_events(&playback.events, rate).unwrap();
+            playback.compiled_event_routes.clear();
+            let track = playback.tracks.get_mut("guitar").unwrap();
+            track.volume = 0.65;
+            track.pan = 0.23;
+            ensure_compiled_event_routes(&mut playback);
+            playback
+        }
+        let mut failures = Vec::new();
+        for rate in [44100, 48000] {
+            let frames = (rate as f64 * 1.65).round() as usize;
+            let mut origin = fixture(rate, 0);
+            let reference = render_frames(&mut origin, frames);
+            retain_capture(rate, 0, 0, "", &reference);
+            assert!(reference
+                .iter()
+                .any(|(left, right)| (left - right).abs() > 0.001));
+            for onset_frame in [
+                12345,
+                rate as usize * 10 + 123,
+                rate as usize * 60 + 123,
+                rate as usize * 100 + 123,
+                rate as usize * 1800 + 123,
+                rate as usize * 7200 + 123,
+            ] {
+                let mut later = fixture(rate, onset_frame);
+                later.position_seconds = (onset_frame - 128) as f64 / rate as f64;
+                reset_scan_starts(&mut later);
+                let rendered = render_frames(&mut later, frames + 128);
+                retain_capture(rate, onset_frame, -128, "", &rendered);
+                let onset_error = max_frame_diff(&reference, &rendered[128..]);
+                let preroll_peak = rendered[..128].iter().fold(0.0_f32, |peak, (left, right)| {
+                    peak.max(left.abs()).max(right.abs())
+                });
+                let seek_frame = (rate as f64 * 1.1).round() as usize;
+                let mut seek = fixture(rate, onset_frame);
+                seek.position_seconds = (onset_frame + seek_frame) as f64 / rate as f64;
+                reset_scan_starts(&mut seek);
+                let seek_rendered = render_frames(&mut seek, frames - seek_frame);
+                retain_capture(rate, onset_frame, seek_frame as i64, "", &seek_rendered);
+                let seek_error = max_frame_diff(&reference[seek_frame..], &seek_rendered);
+                eprintln!("Campfire full stereo rate={rate} onset_frame={onset_frame} onset_error={onset_error} seek_error={seek_error} preroll_peak={preroll_peak}");
+                if onset_error > 1e-7 || seek_error > 1e-7 || preroll_peak > 0.0 {
+                    failures.push((rate, onset_frame, onset_error, seek_error, preroll_peak));
+                }
+            }
+            for (seconds, fraction) in [(10, 0.4_f64), (10, 0.6), (7200, 0.999999)] {
+                let onset = rate as usize * seconds + 123;
+                let floored_onset = onset;
+                let mut fractional = fixture(rate, onset);
+                fractional.events[0].time = (onset as f64 + fraction) / rate as f64;
+                fractional.position_seconds = (floored_onset - 128) as f64 / rate as f64;
+                reset_scan_starts(&mut fractional);
+                let rendered = render_frames(&mut fractional, frames + 128);
+                retain_capture(
+                    rate,
+                    onset,
+                    -128,
+                    if fraction < 0.5 {
+                        "fraction04"
+                    } else if fraction < 0.9 {
+                        "fraction06"
+                    } else {
+                        "fraction999999"
+                    },
+                    &rendered,
+                );
+                assert!(
+                    max_frame_diff(&reference, &rendered[128..]) < 1e-7,
+                    "fractional Campfire onset must match Core's floored output-grid onset"
+                );
+            }
+            // An earlier legacy event in the one-frame window must neither
+            // sound early nor hide the Campfire onset floored to this frame.
+            for cache_stem in [false, true] {
+                let onset = rate as usize * 10 + 123;
+                let mut mixed = fixture(rate, onset);
+                mixed.events[0].time = (onset as f64 + 0.4) / rate as f64;
+                let mut legacy = test_generated_event(
+                    "nearby-bass",
+                    "bass",
+                    (onset as f64 + 0.1) / rate as f64,
+                    0.04,
+                    0.8,
+                );
+                legacy.track_id = "guitar".into();
+                mixed.events.insert(0, legacy);
+                mixed.position_seconds = onset as f64 / rate as f64;
+                reset_scan_starts(&mut mixed);
+                let mut origin = fixture(rate, 0);
+                let (actual, expected) = if cache_stem {
+                    (
+                        render_next_cache_stem_frame(&mut mixed),
+                        render_next_cache_stem_frame(&mut origin),
+                    )
+                } else {
+                    (
+                        render_next_frame(&mut mixed),
+                        render_next_frame(&mut origin),
+                    )
+                };
+                assert_eq!(
+                    actual, expected,
+                    "legacy future event must stay silent without blocking Campfire"
+                );
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "full stereo graph changes with timeline origin/seek: {failures:?}"
+        );
+    }
+
+    #[test]
+    fn native_campfire_ordinary_export_keeps_tails_and_exact_loops_keep_length() {
+        let mut ordinary = campfire_test_playback(0.9);
+        let wav =
+            render_playback_to_wav(&mut ordinary, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert!(wav.duration_seconds >= 2.481);
+        let mut exact = campfire_test_playback(0.9);
+        let wav =
+            render_playback_to_wav(&mut exact, 1.0, NativeAudioRenderMode::MixExact, 32).unwrap();
+        assert_eq!(wav.duration_seconds, 1.0);
+        let mut muted = campfire_test_playback(0.9);
+        muted.tracks.get_mut("guitar").unwrap().mute = true;
+        let wav = render_playback_to_wav(&mut muted, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert_eq!(
+            wav.duration_seconds, 1.0,
+            "muted Campfire cannot add a silent tail to the export"
+        );
+    }
+
+    #[test]
+    fn native_campfire_constructor_prepares_and_rejects_invalid_recipe_before_playback() {
+        let mut payload = serde_json::json!({
+            "startSeconds": 0.0, "sampleRate": 48000,
+            "tracks": [{"id": "guitar", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false}],
+            "events": [{"id": "campfire", "kind": "guitar", "trackId": "guitar", "time": 0.0, "duration": 0.1, "velocity": 0.7,
+                "instrument": "campfire_acoustic", "midiNotes": [50, 57, 62, 66], "direction": "up", "technique": {"campfire": {"recipeVersion": 1, "seed": 123}}}]
+        });
+        let mut runtime = NativeAudioRuntime::default();
+        let mut playback = runtime
+            .build_playback(
+                serde_json::from_value(payload.clone()).unwrap(),
+                48000,
+                2,
+                1,
+            )
+            .unwrap();
+        assert_eq!(playback.campfire_events.len(), 1);
+        assert!(playback.compiled_event_routes[0]
+            .as_ref()
+            .unwrap()
+            .campfire
+            .is_some());
+        assert!(render_frames(&mut playback, 2048)
+            .iter()
+            .any(|(left, right)| left.abs() > 0.001 || right.abs() > 0.001));
+        payload["events"][0]["technique"]["campfire"]["recipeVersion"] = serde_json::json!(2);
+        assert!(runtime
+            .build_playback(serde_json::from_value(payload).unwrap(), 48000, 2, 2)
+            .is_err());
+        assert!(
+            runtime.shared.is_none(),
+            "preparation test must never open a physical device"
+        );
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_does_not_start_notes_outside_the_requested_body() {
+        for onset in [1.0, 2.0] {
+            let mut playback = campfire_test_playback(onset);
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, 1.0,
+                "a future note at {onset} must not extend or enter the requested render"
+            );
+            assert!(rendered.bytes[44..]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|bytes| f32::from_le_bytes(*bytes) == 0.0));
+        }
+        let mut reference = campfire_test_playback(0.9);
+        let expected =
+            render_playback_to_wav(&mut reference, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        let mut with_future = campfire_test_playback(0.9);
+        let mut future = with_future.events[0].clone();
+        future.id = "outside-window".into();
+        future.time = 1.5;
+        future.midi_notes = vec![74.0];
+        with_future.events.push(future);
+        with_future.campfire_events = prepare_campfire_events(&with_future.events, 8000).unwrap();
+        with_future.compiled_event_routes.clear();
+        let actual =
+            render_playback_to_wav(&mut with_future, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert_eq!(
+            actual.bytes, expected.bytes,
+            "a future pluck must not enter another note's legitimate tail extension"
+        );
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_does_not_extend_for_explicitly_silent_sources() {
+        for silent in ["velocity", "clip-gain", "track-volume", "master-volume"] {
+            let mut playback = campfire_test_playback(0.9);
+            if silent == "velocity" {
+                playback.events[0].velocity = 0.0;
+                playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+                playback.compiled_event_routes.clear();
+            } else if silent == "clip-gain" {
+                playback.events[0].clip_gain = Some(0.0);
+            } else if silent == "track-volume" {
+                playback.tracks.get_mut("guitar").unwrap().volume = 0.0;
+            } else {
+                insert_playback_track(&mut playback, test_track("master", 0.0, 0.0, false, false));
+            }
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, 1.0,
+                "{silent} must not add a silent Campfire tail"
+            );
+            assert!(
+                rendered.bytes[44..]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .all(|bytes| f32::from_le_bytes(*bytes) == 0.0),
+                "{silent} must render numerical silence, including either sign of zero"
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_ends_on_the_same_floored_grid_as_prepared_pcm() {
+        for rate in [44100_u32, 48000] {
+            let onset = 0.123456_f64;
+            let mut playback = campfire_test_playback(onset);
+            playback.sample_rate = rate;
+            playback.campfire_events = prepare_campfire_events(&playback.events, rate).unwrap();
+            playback.compiled_event_routes.clear();
+            let expected_frames = (onset * rate as f64).floor() as usize
+                + (1.5 * rate as f64) as usize
+                + (3.0 * 0.027 * rate as f64).round() as usize;
+            let rendered =
+                render_playback_to_wav(&mut playback, 0.2, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.bytes.len(),
+                44 + expected_frames * 8,
+                "ordinary tail must not acquire an extra frame from raw fractional seconds"
+            );
+            assert_eq!(
+                rendered.duration_seconds,
+                expected_frames as f64 / rate as f64
+            );
+            assert_eq!(
+                playback_event_release_end(&playback, 0),
+                expected_frames as f64 / rate as f64
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_mix_reports_a_tail_beyond_the_existing_render_limit() {
+        let mut playback = campfire_test_playback(599.9);
+        let result = render_playback_to_wav(&mut playback, 600.0, NativeAudioRenderMode::Mix, 32);
+        assert!(result.is_err());
+        assert!(result
+            .err()
+            .unwrap()
+            .contains("Campfire tail exceeds the 600-second"));
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_ignores_mixed_instrument_id_collisions() {
+        for (kind, instrument) in [
+            ("bass", None),
+            ("guitar", Some("amp")),
+            ("bass", Some("campfire_acoustic")),
+        ] {
+            let mut playback = campfire_test_playback(0.0);
+            let expected_duration = playback.campfire_events["campfire"].end_seconds(0.0);
+            let mut collision = test_generated_event("campfire", kind, 1.0, 0.1, 0.8);
+            collision.track_id = "guitar".into();
+            collision.instrument = instrument.map(str::to_owned);
+            collision.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+            playback.events.push(collision);
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.2, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, expected_duration,
+                "{kind}/{instrument:?} must not add a phantom Campfire export tail"
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_id_collision_cannot_replace_another_instrument_or_its_release() {
+        let mut playback = campfire_test_playback(0.0);
+        for (kind, instrument) in [
+            ("bass", None),
+            ("guitar", Some("amp")),
+            ("bass", Some("campfire_acoustic")),
+        ] {
+            let mut event = test_generated_event("campfire", kind, 0.0, 0.04, 0.8);
+            event.track_id = "guitar".into();
+            event.instrument = instrument.map(str::to_owned);
+            event.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+            playback.events.push(event);
+        }
+        // Mixed-instrument IDs remain accepted; only true Campfire events may
+        // acquire the prepared bank entry associated with that ID.
+        playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+        ensure_compiled_event_routes(&mut playback);
+        assert!(playback.compiled_event_routes[0]
+            .as_ref()
+            .unwrap()
+            .campfire
+            .is_some());
+        let (left, right) = source_pan_gains(0.0);
+        for index in 1..playback.events.len() {
+            assert!(playback.compiled_event_routes[index]
+                .as_ref()
+                .unwrap()
+                .campfire
+                .is_none());
+            assert_eq!(
+                playback_event_release_end(&playback, index),
+                event_release_end(&playback.events[index])
+            );
+            let mut audible = false;
+            for frame in [1, 17, 101] {
+                let t = frame as f64 / 8000.0;
+                let expected = render_event_sample(&playback.events[index], t);
+                let mut budget = TrackSourceBudget::with_capacity(4);
+                let source =
+                    render_generated_event_source(&mut playback, index, t, &mut budget, false);
+                if expected.abs() <= 0.000001 {
+                    assert!(source.is_none());
+                } else {
+                    audible = true;
+                    let source = source.unwrap();
+                    assert_eq!(
+                        (source.left, source.right),
+                        (expected * left, expected * right)
+                    );
+                }
+            }
+            assert!(
+                audible,
+                "fixture must exercise the original instrument's audible route"
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_invalid_intent_fails_before_render_and_never_uses_amp_fallback() {
+        let playback = campfire_test_playback(0.0);
+        let event = &playback.events[0];
+        assert_eq!(
+            render_event_sample(event, 0.01),
+            0.0,
+            "unprepared helper must not substitute a sawtooth"
+        );
+        for performance in [
+            serde_json::json!({"recipeVersion": 2}),
+            serde_json::json!({"seed": -1}),
+            serde_json::json!({"tailPolicy": "hidden-normalize"}),
+            serde_json::json!({"strumSeconds": 1e12}),
+        ] {
+            let mut invalid = event.clone();
+            invalid.technique = Some(serde_json::json!({"campfire": performance}));
+            assert!(prepare_campfire_events(&[invalid], 48000).is_err());
+        }
+        let mut invalid = event.clone();
+        invalid.time = -0.1;
+        assert!(prepare_campfire_events(&[invalid], 48000).is_err());
+        let mut invalid = event.clone();
+        invalid.midi_notes[0] = 50.5;
+        assert!(prepare_campfire_events(&[invalid], 48000).is_err());
+        assert!(prepare_campfire_events(&[event.clone(), event.clone()], 48000).is_err());
+    }
+
     fn test_generated_event(
         id: &str,
         kind: &str,
@@ -10903,6 +12585,7 @@ mod tests {
             detune_cents: None,
             midi_notes: Vec::new(),
             velocity,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: None,
@@ -10940,6 +12623,7 @@ mod tests {
             detune_cents: None,
             midi_notes: vec![40.0, 47.0, 52.0],
             velocity: 1.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: Some(tone.to_string()),
@@ -10977,6 +12661,7 @@ mod tests {
             detune_cents: None,
             midi_notes: Vec::new(),
             velocity: 0.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: None,
@@ -11014,6 +12699,7 @@ mod tests {
             detune_cents: None,
             midi_notes: vec![48.0, 55.0, 64.0],
             velocity: 1.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: Some("warm_pad".to_string()),

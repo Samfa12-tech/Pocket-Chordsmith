@@ -1,5 +1,14 @@
 # Pocket Audio Core
 
+Source candidate `0.3.0` adds the original Campfire Acoustic prepared-note family
+recipe and native-export analysis support. This package remains private and
+workspace/repository-only; it is not an npm release. Existing source IDs and
+PCS1/schema16/17 import compatibility remain in use.
+
+`decodePcmWavBytes` accepts existing PCM16/24 and IEEE float32 WAVs, including
+native DAW float exports. Float values retain their precision and non-finite
+diagnostics for offline analysis; this does not change the PCM16/24 encoders.
+
 Pocket Audio Core is the shared, headless Web Audio runtime and sound-profile contract for the Pocket Chordsmith family. It provides the common parser, normaliser, expressive event renderer, scheduler, instrument recipes, stem mixer, FX layer, offline renderer, capability reporting, and adaptive game-music API used across Pocket Chordsmith, Pocket DJ, Pocket DAW, browser games, and Godot export workflows.
 
 Version 0.2 adds the canonical Standard, Lofi, Chiptune, Western, Heavy Metal, and Funk profile registry; PCS schema-17 expressive events; deterministic live/offline reference rendering; shared recipe generation; and capability/loss reports. Exact app-to-app mastered tone parity still requires the backend-specific listening gates in the sound-parity matrix.
@@ -10,10 +19,20 @@ code.
 
 ## Current Status
 
-- Core version: `0.2.0`
+The existing offline meter now uses v3 K-weighting and 32-tap windowed-sinc
+four-times true-peak estimation. Independent installed FFmpeg 9.0 comparisons
+pass 63 deterministic mono/stereo cases across 16/22.05/44.1/48/88.2/96/192kHz.
+Frozen external readings and PCM hashes run in the normal Core tests; FFmpeg is
+not a new runtime dependency. `npm run calibrate:meters -- --ffmpeg <binary>
+--output <directory>` reproduces the external run. Read
+[the calibration checkpoint](../../docs/AUDIO_METER_CALIBRATION_2026-10-15.md)
+for exact methods, tolerances, failed controls and scope. Measurements remain
+labelled estimates; this is not EBU/ITU certification or a blanket mastering claim.
+
+- Core source version: `0.3.0`
 - Supported source prefix: `PCS1:`
 - Source schema targets: Pocket Chordsmith schemas `16` and `17`, with reversible legacy projection and explicit loss reporting
-- Integration status: Pocket Chordsmith v68, Pocket DJ v1g, Pocket DAW, and the Godot addon preserve canonical profile and rich-event intent; unsupported preview behavior remains visible through capability reports
+- Integration status: source candidates Pocket Chordsmithv69, Pocket DJv1h, Pocket DAW0.6.51 and Godot1.3.0 preserve canonical profile and rich-event intent; unsupported preview behavior remains visible through capability reports
 - Render status: deterministic profile-aware PCM/WAV and stem reference output, including parameter-sensitive Metal, Funk, Chip, Western, Lofi, and Standard behavior; this is not a claim of mastered cross-backend tone parity
 - Live playback status: profile-aware browser scheduling and procedural voices with explicit backend limitations
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics

@@ -7,9 +7,54 @@ import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, DRUM_LANE_DEFS, getD
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
+import { createNativeGameTimeline } from "../src/daw/nativeGameTimeline";
+import { createAutomationLane } from "../src/daw/automation";
+import { nativeTransportMap, timelineSecondsAtBar } from "../src/daw/timeline";
+import { buildNativeAudioStartPayload } from "../src/native/audioPlayback";
 import { addTrackToProject, setTrackFolder, trackIsAudible } from "../src/daw/tracks";
 
 describe("export job helpers", () => {
+  it("exports edited native placement, gaps, tempo and meter using the playback clock map", () => {
+    let project = createDemoProject();
+    project.timeline.bars = 6;
+    project.project.meterMap = [{id: "three", bar: 3, numerator: 3, denominator: 8}];
+    project = createAutomationLane(project, "project.tempo", {min: 30, max: 300, points: [{bar: 1, value: 120, curve: "linear"}, {bar: 5, value: 180, curve: "hold"}]}).project;
+    const clip = project.timeline.clips[0];
+    clip.startBar = 4.5;
+    clip.barLength = 0.5;
+    project.timeline.markers = [{id: "native-cue", bar: 4.5, name: "Edited entry"}];
+    const before = JSON.stringify(project);
+    const timeline = createGameExportManifest(project, "godot-adaptive-pack").nativeTimeline;
+    expect(timeline.transportMap).toEqual(buildNativeAudioStartPayload(project, [], 0).transportMap);
+    expect(timeline.transportMap).toEqual(nativeTransportMap(project));
+    expect(timeline.transportMap[0].tempo).toBe(120);
+    expect(timeline.transportMap.find(point => point.tempo === 180)).toBeTruthy();
+    expect(timeline.bars[2]).toMatchObject({bar: 3, numerator: 3, denominator: 8, startTick: 3840, endTick: 4560});
+    const placed = timeline.clips.find(item => item.id === clip.id)!;
+    expect(placed).toMatchObject({startBar: 4.5, endBar: 5});
+    expect(placed.startSeconds).toBeCloseTo(timelineSecondsAtBar(project, 4.5), 12);
+    expect(placed.endSeconds).toBeCloseTo(timelineSecondsAtBar(project, 5), 12);
+    expect(timeline.markers[0].seconds).toBeCloseTo(timelineSecondsAtBar(project, 4.5), 12);
+    expect(timeline.musicalEndSeconds).toBeCloseTo(timelineSecondsAtBar(project, 7), 12);
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it("exports audio-only native projects without requiring an embedded Chordsmith project", () => {
+    const project = createDemoProject();
+    project.sourceRefs = [];
+    project.timeline.clips = [];
+    project.timeline.bars = 2;
+    expect(createNativeGameTimeline(project)).toMatchObject({version: 1, audioMode: "prepared-arrangement", clips: [], musicalEndTick: 3840});
+  });
+
+  it("reports native timeline size and fractional meter limits before rendering", () => {
+    const project = createDemoProject();
+    project.timeline.bars = 16385;
+    expect(() => createNativeGameTimeline(project)).toThrow("16384 bars");
+    project.timeline.bars = 4;
+    project.project.meterMap = [{id: "fraction", bar: 2.5, numerator: 3, denominator: 4}];
+    expect(() => createNativeGameTimeline(project)).toThrow("bar boundaries");
+  });
   it("builds stem plans and track-filtered stem projects", () => {
     const project = createDemoProject();
     const stems = createStemExportPlan(project);
@@ -408,9 +453,17 @@ describe("export job helpers", () => {
     const project = createDemoProject();
     project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.sampleRate = 48000;
     project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.settings.normalize = "peak";
+    const renderProfiles: Array<{ sampleRate?: number; normalize?: unknown; dither?: unknown; channelMode?: unknown }> = [];
+    project.exportProfiles.find((profile) => profile.id === "section-loops")!.sampleRate = 22050;
+    project.exportProfiles.find((profile) => profile.id === "section-loops")!.settings.normalize = "peak";
+    const sourceBefore = JSON.stringify(project);
     const result = await createGamePackZipBlob(project, "web-game-pack", {
       sourceProjectContents: JSON.stringify(project),
-      renderWav: async (renderProject) => new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" })
+      renderWav: async (renderProject) => {
+        const profile = renderProject.exportProfiles.find((item) => item.id === "full-song-wav")!;
+        renderProfiles.push({ sampleRate: profile.sampleRate, normalize: profile.settings.normalize, dither: profile.settings.dither, channelMode: profile.settings.channelMode });
+        return new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" });
+      }
     });
     const paths = result.entries.map((entry) => entry.path);
 
@@ -442,9 +495,24 @@ describe("export job helpers", () => {
       expect(result.manifest.artifacts.find((artifact) => artifact.path === entry.path)?.sizeBytes).toBe(entry.size);
     }
     expect(result.manifest.audio.current.sampleRate).toBe(48000);
-    expect(result.manifest.audio.current.normalization).toEqual({ mode: "peak", targetPeak: 0.95 });
+    expect(result.manifest.audio.current.normalization).toEqual({ mode: "off" });
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.sampleRate === 48000)).toBe(true);
-    expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "peak")).toBe(true);
+    expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "off")).toBe(true);
+    expect(renderProfiles.every((profile) => profile.sampleRate === 48000 && profile.normalize === false && profile.dither === "off" && profile.channelMode === "stereo")).toBe(true);
+    expect(JSON.stringify(project)).toBe(sourceBefore);
+    expect(result.manifest.mixContract.reference).toBe(result.manifest.fullMix);
+    expect(result.manifest.mixContract.reconstruction).toBe("independently-rendered-stems-not-guaranteed-sum-equivalent");
+  });
+
+  it("marks aggregate drums and their branches as alternative playback sets", () => {
+    const project = branchGeneratedDrumsToTracks(createDemoProject());
+    const manifest = createGameExportManifest(project, "godot-adaptive-pack");
+    const alternatives = manifest.mixContract.stemAlternatives.find((group) => group.id === "drums")!.alternatives;
+    expect(alternatives.find((item) => item.id === "aggregate")!.stemIds).toEqual(["drums"]);
+    const branches = alternatives.find((item) => item.id === "branches")!.stemIds;
+    expect(branches).toContain("drums-kick");
+    expect(branches).not.toContain("drums");
+    expect(manifest.mixContract.playbackChoice).toBe("full-mix-or-adaptive-layers");
   });
 
   it("reports package self-check failures for missing manifest entries", () => {

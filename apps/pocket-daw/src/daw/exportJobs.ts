@@ -5,6 +5,7 @@ import { createAudioMediaAnalysisSummary, createMediaPortabilitySummary, createP
 import { validateProjectInvariants } from "./projectInvariants";
 import { createRoutingExportSummary, type RoutingExportSummary } from "./routing";
 import { timelineSecondsAtBar } from "./timeline";
+import { createNativeGameTimeline, type NativeGameTimeline } from "./nativeGameTimeline";
 import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, ensureDrumLaneMixerInPlace } from "./drumLanes";
 import {
@@ -114,6 +115,7 @@ export interface GamePackDeliveryTarget {
 }
 
 export interface GameExportManifest {
+  nativeTimeline: NativeGameTimeline;
   kind: "godot-adaptive-pack" | "web-game-pack";
   projectTitle: string;
   bpm: number;
@@ -122,6 +124,17 @@ export interface GameExportManifest {
   timeSig: number;
   manifestFile: string;
   fullMix: string;
+  mixContract: {
+    version: 1;
+    reference: string;
+    playbackChoice: "full-mix-or-adaptive-layers";
+    layerGain: "baked-do-not-apply-source-mixer-twice";
+    reconstruction: "independently-rendered-stems-not-guaranteed-sum-equivalent";
+    sharedEffects: "source-native-routing-applied-per-render";
+    normalization: "off";
+    validation: "decoded-native-and-godot-capture-required";
+    stemAlternatives: Array<{ id: string; alternatives: Array<{ id: string; stemIds: string[] }> }>;
+  };
   sourceProject: string;
   stems: StemExportPlanItem[];
   sectionLoops: SectionLoopExportItem[];
@@ -626,7 +639,7 @@ function projectWithWavRenderProfile(project: PocketDawProject, sourceProfileId:
 export function createGameExportManifest(project: PocketDawProject, kind: GameExportManifest["kind"]): GameExportManifest {
   const stems = createStemExportPlan(project);
   const sectionLoops = createSectionLoopMetadata(project);
-  const audio = createGamePackAudioSummary(project);
+  const audio = createGamePackAudioSummary(project, "full-song-wav", true);
   const routing = createRoutingExportSummary(project);
   const renderCache = createRenderCacheSummary(project);
   const mediaAnalysis = createAudioMediaAnalysisSummary(project);
@@ -656,6 +669,7 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
   ];
   return {
     kind,
+    nativeTimeline: createNativeGameTimeline(project),
     projectTitle: project.project.title,
     bpm: project.project.bpm,
     key: project.project.key,
@@ -663,6 +677,17 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     timeSig: project.project.timeSig,
     manifestFile,
     fullMix: fullMixFile,
+    mixContract: {
+      version: 1,
+      reference: fullMixFile,
+      playbackChoice: "full-mix-or-adaptive-layers",
+      layerGain: "baked-do-not-apply-source-mixer-twice",
+      reconstruction: "independently-rendered-stems-not-guaranteed-sum-equivalent",
+      sharedEffects: "source-native-routing-applied-per-render",
+      normalization: "off",
+      validation: "decoded-native-and-godot-capture-required",
+      stemAlternatives: createStemAlternatives(stems)
+    },
     sourceProject,
     stems,
     sectionLoops,
@@ -686,6 +711,8 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     warnings,
     notes: [
       "Full mix, stem WAVs and section loop WAVs are rendered into this pack.",
+      "Play the full mix OR adaptive stems; never sum the full mix with its layers. Drum aggregate and branch files are alternatives, not additive duplicates.",
+      "Stem gains are baked. Independently rendered shared/master effects can respond differently to isolated stems; their sum is not guaranteed to reproduce the full mix. Use the full mix as the reference.",
       "Manifest paths use the target pack folder layout so Godot and web-game importers can collect files deterministically.",
       "The source .pocketdaw JSON is included for round-trip edits.",
       "Compressed FLAC, Ogg Vorbis and MP3 pack metadata is reserved for future encoder-backed profiles; current packs remain WAV-only."
@@ -710,18 +737,19 @@ export async function createGamePackZipBlob(project: PocketDawProject, kind: Gam
   };
   const totalRenders = 1 + manifest.stems.length + manifest.sectionLoops.length;
   let renderIndex = 0;
+  const renderWav = (renderProject: PocketDawProject) => options.renderWav(projectForGamePackRender(renderProject, manifest.audio.current.sampleRate));
 
   await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, "Full mix");
-  await pushEntry(manifest.fullMix, await options.renderWav(project));
+  await pushEntry(manifest.fullMix, await renderWav(project));
 
   for (const stem of manifest.stems) {
     await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, stem.label);
-    await pushEntry(stem.packPath, await options.renderWav(projectWithOnlyTracksAudible(project, stem.trackIds)));
+    await pushEntry(stem.packPath, await renderWav(projectWithOnlyTracksAudible(project, stem.trackIds)));
   }
 
   for (const loop of manifest.sectionLoops) {
     await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, loop.name);
-    await pushEntry(loop.packPath, await options.renderWav(projectForSectionLoopRender(project, loop)));
+    await pushEntry(loop.packPath, await renderWav(projectForSectionLoopRender(project, loop)));
   }
 
   await pushEntry(manifest.sourceProject, portableSourceProjectContents(project, options.sourceProjectContents));
@@ -737,6 +765,23 @@ export async function createGamePackZipBlob(project: PocketDawProject, kind: Gam
     entries: entrySummaries,
     selfCheck
   };
+}
+
+function projectForGamePackRender(project: PocketDawProject, sampleRate: number): PocketDawProject {
+  const next = cloneProject(project);
+  next.exportProfiles = next.exportProfiles.map((profile) => profile.id === "full-song-wav" ? {
+    ...profile, sampleRate, bitDepth: 16,
+    settings: { ...profile.settings, normalize: false, dither: "off", channelMode: "stereo" }
+  } : profile);
+  return next;
+}
+
+function createStemAlternatives(stems: StemExportPlanItem[]): GameExportManifest["mixContract"]["stemAlternatives"] {
+  const aggregate = stems.filter((stem) => stem.id === "drums").map((stem) => stem.id);
+  const branches = stems.filter((stem) => stem.id.startsWith("drums-")).map((stem) => stem.id);
+  return aggregate.length && branches.length ? [{ id: "drums", alternatives: [
+    { id: "aggregate", stemIds: aggregate }, { id: "branches", stemIds: branches }
+  ] }] : [];
 }
 
 function portableSourceProjectContents(project: PocketDawProject, contents?: string): string {
@@ -952,14 +997,14 @@ export function gamePackAudioCodecMetadata(
   };
 }
 
-function createGamePackAudioSummary(project: PocketDawProject, profileId = "full-song-wav"): GamePackAudioSummary {
+function createGamePackAudioSummary(project: PocketDawProject, profileId = "full-song-wav", unityPcm = false): GamePackAudioSummary {
   const profile = project.exportProfiles.find((item) => item.id === profileId);
   const profileRate = Number(profile?.sampleRate);
   const sampleRate = Number.isFinite(profileRate) && profileRate >= 22050 && profileRate <= 192000
     ? Math.round(profileRate)
     : project.project.sampleRate || 44100;
-  const normalization = exportProfileNormalizationMetadata(profile);
-  const dither = exportProfileDitherMetadata(profile);
+  const normalization = unityPcm ? { mode: "off" as const } : exportProfileNormalizationMetadata(profile);
+  const dither = unityPcm ? { mode: "off" as const, appliesTo: "none" as const } : exportProfileDitherMetadata(profile);
   return {
     current: gamePackAudioCodecMetadata("wav", sampleRate, normalization, dither),
     plannedFormats: [

@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { serveBuiltUi } from "./staticUiTransport.js";
+
+test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
 test.setTimeout(60_000);
 
@@ -26,6 +29,76 @@ async function openSoundLibrary(page) {
   await expect(library).toBeVisible();
   return library;
 }
+
+test("Campfire editor controls retain focus, stored grid and undo with native playback tested separately", async ({ page }) => {
+  await gotoApp(page);
+  await openImportPanel(page);
+  await page.locator("#importText").fill(JSON.stringify({projectVersion:17,key:"D",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"clean",sectionBars:{A:1},songSequence:["A"],guitarPatternA:["open"]}));
+  await page.locator('[data-action="import-text"]').click();
+  const close=page.locator('[data-action="file-window-close"]');
+  if(await close.isVisible()) await close.click();
+  await page.locator('.timeline-track-header[data-track-id="guitar"]').click({position:{x:4,y:8}});
+  await page.getByRole("button",{name:"Inspector",exact:true}).click();
+  const tone=page.locator('[data-guitar-setting="guitarTone"]');
+  await expect(tone).toBeVisible();
+  await tone.focus();
+  await tone.selectOption("campfire_acoustic");
+  await expect(tone).toHaveValue("campfire_acoustic");
+  await expect(tone).toBeFocused();
+  const performance=page.locator('[data-guitar-performance="A"]');
+  await performance.focus();
+  await performance.selectOption("strum_pick");
+  await expect(performance).toHaveValue("strum_pick");
+  await expect(performance).toBeFocused();
+  await expect(page.locator('[data-guitar-setting="guitarRegister"] option[value="high"]')).toHaveAttribute("disabled", "");
+  for (const surface of ['.timeline-step', '.sequencer-block']) {
+    const step = surface === '.timeline-step' ? page.locator('.timeline-step[data-guitar-step="A:0"]') : page.locator('.sequencer-block [data-guitar-step="A:0"]');
+    await expect(step).toBeDisabled();
+    await expect(step).toHaveAttribute("aria-label",/Strum/i);
+  }
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:4"]')).toHaveAttribute("aria-label",/Pick/i);
+  await performance.selectOption("grid");
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:0"]')).toBeEnabled();
+  await expect(page.locator('.timeline-step[data-guitar-step="A:0"]')).toBeEnabled();
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:0"]')).toHaveAttribute("aria-label",/Open/i);
+  await page.locator('[data-action="undo"]:visible').first().click();
+  await expect(performance).toHaveValue("strum_pick");
+});
+
+test("empty Campfire Grid activates automatic performance while preserving explicit mixer mute and Undo", async ({ page }) => {
+  await gotoApp(page);
+  await openImportPanel(page);
+  await page.locator("#importText").fill(JSON.stringify({projectVersion:17,key:"D",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",sectionBars:{A:1},songSequence:["A"],guitarPatternA:[]}));
+  await page.locator('[data-action="import-text"]').click();
+  const close=page.locator('[data-action="file-window-close"]');
+  if(await close.isVisible()) await close.click();
+  const header=page.locator('.timeline-track-header[data-track-id="guitar"]');
+  await expect(header).toHaveClass(/inactive/);
+  const mute=header.locator('[data-mute-track="guitar"]');
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await header.click({position:{x:4,y:8}});
+  await page.getByRole("button",{name:"Inspector",exact:true}).click();
+  const performance=page.locator('[data-guitar-performance="A"]');
+  await performance.selectOption("strum_pick");
+  await expect(header).not.toHaveClass(/inactive/);
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  await performance.selectOption("grid");
+  await performance.selectOption("strum_pick");
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  const undo=page.locator('[data-action="undo"]:visible').first();
+  await undo.click();
+  await expect(performance).toHaveValue("grid");
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  await undo.click();
+  await undo.click();
+  await expect(performance).toHaveValue("strum_pick");
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await undo.click();
+  await expect(header).toHaveClass(/inactive/);
+  await expect(performance).toHaveValue("grid");
+});
 
 test("starts the browser fallback and exposes core DAW controls", async ({ page }) => {
   await gotoApp(page);
@@ -74,7 +147,7 @@ test("saves and exports diagnostics through browser fallback downloads", async (
 test("opens diagnostics and audio settings panels without native APIs", async ({ page }) => {
   await gotoApp(page);
 
-  await page.locator(".menu-group").filter({ hasText: "Help" }).hover();
+  await page.locator(".menu-root").filter({ hasText: /^Help$/ }).click();
   await page.locator(".menu-group").filter({ hasText: "Help" }).locator('[data-action="controls-open"]').first().click();
   await expect(page.locator('[data-controls-backdrop="true"]')).toBeVisible();
   await expect(page.locator("#controls-title")).toContainText("About / Diagnostics");
@@ -344,15 +417,71 @@ test("opens the persistent Sounds Library without trapping the rest of the studi
   await expect(search).toBeFocused();
   await search.fill("kick");
   await page.keyboard.press("Space");
-  await expect(search).toHaveValue("kick");
-  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+  await expect(search).toHaveValue("kick ");
+  await expect(search).toBeFocused();
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Play");
 
   await page.keyboard.press("Control+Space");
   await expect(library.getByRole("status")).toContainText("Select a sound");
-  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Play");
 
   await page.keyboard.press("Escape");
   await expect(library).toHaveCount(0);
+});
+
+test("filters sample results without replacing studio, search, composition or selection", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pocket_daw_sample_library_v1", JSON.stringify({
+    version: 1, folders: [], favoriteIds: [], recentIds: [], settings: { previewVolume: 0.8, lastCategory: "all", lastFolderId: null },
+    entries: ["Kick", "Guitar"].map((name) => ({ id: name.toLowerCase(), name, path: `C:/fixtures/${name}.wav`, folderPath: "C:/fixtures", extension: "wav", sizeBytes: 100, modifiedUnixMs: null, category: name === "Kick" ? "drums" : "guitar", source: "file", sourceRoot: null, addedAt: "2026-10-15", lastSeenAt: "2026-10-15" }))
+  })));
+  await gotoApp(page);
+  await openSoundLibrary(page);
+  await page.getByRole("tab", { name: "Samples", exact: true }).click();
+  await expect(page.locator(".sample-library-row")).toHaveCount(2);
+  await page.locator('[data-sample-library-select="kick"]').check();
+  await expect(page.locator('[data-sample-library-select="kick"]')).toBeFocused();
+  const search = page.locator("[data-sample-library-search]");
+  const identities = await page.evaluateHandle(() => ({ shell: document.querySelector(".app-shell"), input: document.querySelector("[data-sample-library-search]"), transport: document.querySelector("[data-transport-toggle]"), renders: document.querySelector("#app").dataset.renderCount }));
+  await search.fill("Guitar");
+  await expect(page.locator(".sample-library-row")).toHaveCount(1);
+  await expect(page.locator(".sample-library-file strong")).toHaveText("Guitar");
+  await search.evaluate((input) => {
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "音" }));
+    input.value = "音";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "音", isComposing: true }));
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "音" }));
+  });
+  await expect(search).toBeFocused();
+  await search.fill("");
+  await expect(page.locator('[data-sample-library-select="kick"]')).toBeChecked();
+  expect(await page.evaluate((before) => before.shell === document.querySelector(".app-shell") && before.input === document.querySelector("[data-sample-library-search]") && before.transport === document.querySelector("[data-transport-toggle]") && before.renders === document.querySelector("#app").dataset.renderCount, identities)).toBe(true);
+  await search.fill("Kick");
+  await search.press("Home");
+  await search.press("Delete");
+  await expect(search).toHaveValue("ick");
+  await expect(search).toBeFocused();
+  await page.locator("[data-sample-library-category]").focus();
+  await page.locator("[data-sample-library-category]").selectOption("guitar");
+  await expect(page.locator(".sample-library-row")).toHaveCount(0);
+  await expect(page.locator("[data-sample-library-category]")).toBeFocused();
+});
+
+test("updates meters with a fixed query count and keeps readout children during playback", async ({ page }) => {
+  await gotoApp(page);
+  await page.locator("[data-transport-toggle]").click();
+  await expect(page.locator("[data-playing-state]")).toContainText("Playing");
+  const measurement = await page.evaluateHandle(() => {
+    const root = document.querySelector("#app");
+    const original = root.querySelectorAll.bind(root);
+    const state = { calls: 0, initial: Number(root.dataset.liveUpdateCount), readout: root.querySelector("[data-playing-state] strong") };
+    root.querySelectorAll = (selector) => { if (["[data-meter]", "[data-meter-fill]", "[data-input-activity-fill]"].includes(selector)) state.calls += 1; return original(selector); };
+    return state;
+  });
+  await expect.poll(() => page.evaluate((m) => Number(document.querySelector("#app").dataset.liveUpdateCount) - m.initial, measurement)).toBeGreaterThanOrEqual(3);
+  const result = await page.evaluate((m) => ({ calls: m.calls, updates: Number(document.querySelector("#app").dataset.liveUpdateCount) - m.initial, stable: m.readout === document.querySelector("[data-playing-state] strong") }), measurement);
+  expect(result.stable).toBe(true);
+  expect(result.calls).toBeLessThanOrEqual(result.updates * 3);
+  await page.locator("[data-transport-toggle]").click();
 });
 
 test("exposes honest sample empty states and the native-only VST3 boundary", async ({ page }) => {

@@ -12,11 +12,70 @@ products.
 - Keep CI covering core, web, DJ, DAW, and repo hygiene.
 - Document manual release checks for itch and Godot addon publishing.
 
+## Next update: shared Campfire Acoustic guitar
+
+- Add the Towtal Chaos-inspired **Campfire Acoustic** instrument (working name)
+  across Core, Chordsmith, DJ, native DAW and Godot using the
+  [canonical next-update plan](CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md).
+  This is planned work, with provenance, deterministic rendering, compatibility,
+  listening parity and measured performance gates still pending.
+- Preserve the existing performance/polish and release priorities below. Godot
+  production fidelity uses matching rendered stems; optional native preview
+  parity is a separate scope. No release date or completed implementation is
+  implied.
+
+## Next-update workflow refinements: hear, compare, keep
+
+Planned refinements, not implemented features. Preparation/cache hitch fixes,
+dependable controls and Godot two-source fidelity remain ahead of this slice.
+Build on existing audition, selection, preview and undo commands, not a separate
+analysis engine or AutoDJ program.
+
+- Add a contextual **Hear this bit** action for a selected Chordsmith chord
+  change, DAW loop/edit, DJ blend or Godot editor state transition. Include just
+  enough lead-in and tail to hear the change; show the audition range, keep the
+  selection and provide an immediate Stop. Never start audio without user action.
+- Make feedback musical and actionable: name the passage and what to listen for,
+  then offer one reversible next step, such as reducing overlapping bass in a
+  blend or checking beat alignment when drift is suspected. Base findings on
+  available evidence; distinguish **not checked**, **uncertain**, **issue found**
+  and **checked / no issue detected**. Lack of a check is not a clean bill of
+  health. Keep manual adjustment, dismissal and override available.
+- Offer optional, short playable **listen-for** explanations: original versus
+  proposed change on a shared timeline, with one plain-language cue. Keep them
+  user-invoked and easy to skip, not mandatory lessons or a new course system.
+- Refine one preview -> compare -> Apply/Discard -> one-Undo interaction across
+  supported edits. Compare the same passage at the same musical position; keep
+  originals unchanged until Apply, and discard stale previews after edits or
+  selection changes. Reuse the [DAW comparison and finishing acceptance](../apps/pocket-daw/docs/PERFORMANCE_POLISH_AND_FINISH_ROADMAP.md#p2-finish--export-with-existing-pocket-dsp),
+  including its already-planned loudness matching, rather than opening a second
+  A/B project. Godot audition uses [prepared transition assets](../addons/pocket_chordsmith/docs/PERFORMANT_AUDIO_ROADMAP.md#near-term-work),
+  not new gameplay synthesis.
+- Keep Chordsmith/DJ phone-first and uncluttered: contextual actions and optional
+  explanations, not another permanent panel. Respect native DAW/Godot layouts,
+  keyboard access and transport reachability, and Chordsmith's planned distinctive
+  visual direction. Acceptance must cover narrow screens, repeated audition,
+  Stop/Cancel, selection changes, Apply/Discard and undo without new audio hitches.
+
+Inspiration: BeatStitch's [targeted listening](https://beatstitch.ai-created.com/#ears),
+[playable explanations](https://beatstitch.ai-created.com/#how) and
+[workflow presentation](https://beatstitch.ai-created.com/#app), reviewed as website
+examples only, not installed-app or audio-quality validation. Borrow the workflow
+principles, not its skin, source or dense desktop layout. This planning adds no
+dependencies, paid services, implementation or release commitment.
+
 ## Pocket Chordsmith
 
 - Preserve the current browser app behavior and share-code compatibility.
 - Improve docs around imports, exports, MIDI, WAV, and Godot push.
 - Add tests around existing behaviors before large UI or engine changes.
+- Plan a UI revamp for the next update: give Pocket Chordsmith a more
+  interesting, engaging and distinctive musical personality, avoiding a generic
+  AI-template aesthetic. Explore visual directions and agree on one with Sam
+  before broad implementation; no particular aesthetic is approved yet. Preserve
+  legibility, accessible touch targets, keyboard usability and responsive layouts.
+  Keep existing behavior, compatibility and performance/reliability priorities
+  intact. Design exploration and implementation are pending.
 
 ## Pocket DJ
 

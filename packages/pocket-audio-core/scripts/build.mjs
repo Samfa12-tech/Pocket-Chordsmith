@@ -54,6 +54,27 @@ await build({
 });
 
 const esmOutput = Object.values(esmResult.metafile.outputs).find((output) => Array.isArray(output.exports));
+await build({
+  ...common,
+  platform: "browser",
+  target: ["es2020"],
+  entryPoints: [fileURLToPath(new URL("src/campfire-browser.js", packageRoot))],
+  outfile: fileURLToPath(new URL("pocket-audio-campfire.iife.js", distDir)),
+  format: "iife",
+  globalName: "PocketAudioCampfire",
+  minify: true,
+});
+await build({
+  ...common,
+  platform: "browser",
+  target: ["es2020"],
+  entryPoints: [fileURLToPath(new URL("src/prepared-browser.js", packageRoot))],
+  outfile: fileURLToPath(new URL("pocket-audio-prepared.iife.js", distDir)),
+  format: "iife",
+  globalName: "PocketAudioPrepared",
+  minify: true,
+});
+
 const browserOutput = Object.values(browserResult.metafile.outputs).find((output) => Array.isArray(output.exports));
 const manifest = {
   package: packageJson.name,
@@ -63,6 +84,8 @@ const manifest = {
     esm: "pocket-audio-core.esm.js",
     browserEsm: "pocket-audio-core.browser.esm.js",
     iife: "pocket-audio-core.iife.js",
+    preparedIife: "pocket-audio-prepared.iife.js",
+    campfireIife: "pocket-audio-campfire.iife.js",
   },
   sourcemaps: false,
   exports: [...(esmOutput?.exports || [])].sort(),

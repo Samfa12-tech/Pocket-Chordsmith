@@ -1,12 +1,17 @@
 # Godot Parity Export Workflow
 
-Pocket Audio Core is the sound-truth layer for Pocket Chordsmith-to-Godot parity.
+Pocket Audio Core provides a reproducible offline reference for its own rendered
+assets. Chordsmith's browser FX/master output and the fully arranged native DAW
+output require their own source-engine references; they are separate routes.
 
 The safest route is to export audio assets and manifests from Pocket Audio Core, then let Godot use its native audio players, buses, conductor nodes, transitions, ducking, and signals to perform those assets. Godot games do not need to run JavaScript at runtime.
 
 ## Core Rule
 
-Exact parity requires core-rendered assets.
+PCM delivery parity requires source-engine renders, lossless import settings,
+known gain/buses and captured runtime comparison. Headless import alone does not
+prove audio parity. Core's current offline FX manifest is descriptive metadata;
+it does not bake the browser's shared FX/master chain.
 
 Godot-native procedural playback is useful for fast editor preview, but it must be labelled `PROCEDURAL_PREVIEW` unless it has been tested against core-rendered output.
 
@@ -161,7 +166,10 @@ Loop points are section-relative and should be fed into the Godot conductor for 
 2. Run `createGodotExportKit` in a desktop/web tooling step.
 3. Write every `kit.files` entry to a Godot project folder.
 4. Write `kit.manifest` as `manifest.json`.
-5. Import WAVs into Godot.
+5. Create the playback profile with `PCSChartBuildTools` and let the editor
+   reimport its WAVs. The tooling sets pack-local WAVs to uncompressed PCM,
+   retaining source rate, channels, gain and leading silence. Godot 4.6's default
+   WAV importer uses lossy QOA, so a default import is insufficient for PCM parity.
 6. Let `PCSGamePackManifest` or project code read `manifests/godot-adaptive-manifest.json`.
 7. Use native Godot `AudioStreamPlayer` nodes/buses to play stems or section loops.
 8. Use manifest `events` for section starts, beat/bar metadata, and gameplay signals.
@@ -172,9 +180,89 @@ Loop points are section-relative and should be fed into the Godot conductor for 
 var tools := PCSChartBuildTools.new()
 var result := tools.create_playback_profile_from_game_pack_manifest(
 	"res://music/my_song/manifests/godot-adaptive-manifest.json",
-	"res://music/my_song/my_song_profile.tres"
+	"res://music/my_song/my_song_profile.tres",
+	"res://music/my_song",
+	{"playback_mix": "layers", "drum_stems": "aggregate"}
 )
 ```
+
+`playback_mix: "layers"` is the adaptive default. It excludes a corresponding
+full mix, includes a separate shared texture bed when present, and excludes
+duplicate DAW drum branches when an aggregate is selected. Use `drum_stems:
+"branches"` to select the branch set instead. Use `playback_mix: "full-mix"`
+for the authoritative full-mix reference. The importer never silently starts
+both alternatives. Synchronized sets over 32 streams fail explicitly; choose a
+smaller set or full mix rather than silently changing synchronization mode.
+
+Keep baked layer gains at unity unless intentionally remixing. Core dry stems
+now use its real offline instrument renderer, including Campfire Acoustic.
+Independent PCM16 quantization can make their sum differ by a few quantization
+steps; clipping and nonlinear shared processing require explicit comparison.
+Native DAW stems are rendered independently through source routing/master
+processing and are not guaranteed to sum to its full mix. Its game-pack helper
+uses stereo PCM16 with normalization/dither off at a common rate, preserving
+exact zero-tail section-loop lengths. The editable source project is unchanged.
+
+The tooling changes only relative, pack-local `res://` WAV import settings.
+Trusted external audio references are left alone. Existing loop settings are
+retained. `preserve_wav_pcm: false` deliberately opts out; manually confirm
+import settings and fidelity in that case. Uncompressed WAVs cost more memory;
+this correction does not establish cold-load or gameplay frame budgets.
+
+Reproduce the Core route's rendered capture from the Core package:
+
+```text
+node scripts/verify-core-godot-pcm.mjs --godot-bin <Godot-4.6.3> --rendered
+```
+
+The fixture compares both mix choices in both player modes against decoded
+source PCM, accounting for output latency up to 0.5 seconds. Every reference
+frame, including the final frame, must be captured and compared. Capture
+truncation is a failure; silence padding cannot hide an early audio ending.
+The final 100 ms also has a separate RMS/energy check. PCM16 limits remain
+explicit: maximum sample error below 8/32767 and RMS error below 2/32767;
+an ending above 4/32767 RMS must retain its energy within 5% plus 2/32767 RMS.
+This accounts for independent PCM16 quantization without fitting gain or duration.
+The deliberate truncation tests include a one-frame-short recording and a
+full-length recording whose ending was replaced by silence.
+
+It includes a shared texture bed. It does not validate the native DAW route,
+browser master parity, continuous adaptive looping or human listening. Rendered
+LOOP_KIT seams/endings, nonzero-tail alignment and loud/clipping reconstruction
+remain separate acceptance work; these four short captures deliberately disable
+conductor processing to isolate PCM delivery.
+
+### Preserve prepared WAV endings
+
+New game-pack imports enable `preserve_prepared_wav_endings` on the playback
+profile. Existing profiles keep their prior default (`false`); callers can
+explicitly import with `preserve_wav_endings: false`.
+
+Godot 4.6.3 applies a stream-end lookahead fade and its WAV resampler needs
+trailing history ([mixer](https://github.com/godotengine/godot/blob/4.6.3-stable/servers/audio/audio_server.cpp),
+[resampler](https://github.com/godotengine/godot/blob/4.6.3-stable/servers/audio/audio_stream.cpp)).
+Rendered measurement reproduced lost/dimmed final samples in both player modes.
+The conductor now makes a private non-looping PCM WAV resource with a silent
+transport guard after the complete original body. No source file, imported
+resource, sample-preview path or authored loop is modified. Explicitly looping
+WAVs bypass this guard and retain their original loop points and length.
+
+The guard covers 128 output frames plus four source-history frames, adjusted
+for the source/mix rates, bounded to 8–4096 source frames. At 48 kHz into 48 kHz
+it is 132 silent frames (2.75 ms). Compressed WAVs remain unchanged with a
+lossless-import warning; other stream formats retain their existing behavior.
+This preserves endings at normal playback speed; arbitrary pitch/global-speed
+changes remain outside the captured parity contract.
+
+Prewarm and repeated Play reuse the same prepared cache entry; profile replacement
+clears it. PCM preparation can transiently copy the body once. Cold-loading and
+working-set budgets remain pending GODOT-03 work; a warm cache check is not a
+memory/performance pass. The appended transport silence is not an authored
+natural tail or a loop seam fix.
+
+The strict rendered verifier supports `--hard-cut-ending` to retain a late
+Campfire pluck with nonzero final PCM. The same complete-reference and ending
+checks apply, including deliberately truncated and silence-padded captures.
 
 For `LOOP_KIT`, section assets are mapped into `playback_profile.stem_sets`. For `STEM_SYNC`, full-song stems are mapped into `playback_profile.stem_paths`. For `HYBRID`, bed stems and sample/stinger assets are mapped into the existing profile dictionaries.
 

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Chordsmith" />
 <link rel="icon" href="icon.png" />
 <link rel="apple-touch-icon" href="icon.png" />
-<title>Pocket Chordsmith v68 Core Bridge</title>
+<title>Pocket Chordsmith v70 Core Bridge</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e2430; --line:#2b3242; --text:#eef2ff; --muted:#9eabc7;
@@ -65,6 +65,10 @@
   }
   .label{font-size:.8rem; color:var(--muted); margin-bottom:8px}
   .progression{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px}
+  .chord-audition{margin-top:10px; min-width:0}
+  .chord-audition :is(button,select,summary){min-height:44px}
+  .chord-audition summary{display:list-item; padding:12px 4px; cursor:pointer; color:var(--muted)}
+  .chord-audition :is(p,span){overflow-wrap:anywhere}
   .slot{border:1px solid var(--line); background:var(--panel2); border-radius:14px; min-height:82px; padding:10px; display:flex; flex-direction:column; justify-content:space-between; text-align:left; cursor:pointer}
   .slot.active{border-color:var(--accent); outline:2px solid rgba(122,162,255,.18)}
   .slot.playing{border-color:var(--accent2); box-shadow:inset 0 0 0 1px rgba(143,240,198,.4)}
@@ -224,6 +228,44 @@
     outline:3px solid var(--accent2);
     outline-offset:3px;
   }
+  /* Approved themes share the existing editor, controls and preference path. */
+  :root[data-theme-kind="studio"] .panel,
+  :root[data-theme-kind="studio"] .modal-window,
+  :root[data-theme-kind="studio"] .mini-transport,
+  :root[data-theme-kind="studio"] .hover-tooltip{background:var(--panel); border-color:var(--line)}
+  :root[data-theme-kind="studio"] :is(.chord-btn,.chip,.degree-chip,.mini-chip,.pad,.textarea,.genre-drawer),
+  :root[data-theme-kind="studio"] .cell:not(.on):not(.hold){background:var(--panel2); color:var(--text); border-color:var(--line)}
+  :root[data-theme-kind="studio"] .pill.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+  :root[data-theme-kind="studio"] .pill.good{background:var(--panel2); color:var(--text); border-color:var(--accent2)}
+  :root[data-theme-kind="studio"] :is(.chip.active,.mini-chip.active,.degree-chip.active,.sequence-slot.playing,.chord-btn.suggested){background:color-mix(in srgb,var(--accent2) 18%,var(--panel2)); color:var(--text); border-color:var(--accent2)}
+  :root[data-theme-kind="studio"] .mini-chip.warn{background:color-mix(in srgb,#a34428 15%,var(--panel2)); color:var(--text); border-color:var(--accent)}
+  :root[data-theme-kind="studio"] .mini-chip.info{background:color-mix(in srgb,var(--accent) 15%,var(--panel2)); color:var(--text); border-color:var(--accent)}
+  :root[data-theme-kind="studio"] .cell.on{color:#fff}
+  :root[data-theme-kind="studio"] .cell.melody.hold{color:#fff}
+  :root[data-theme-kind="studio"] .slot.active{outline-color:color-mix(in srgb,var(--accent) 30%,transparent)}
+  :root[data-theme-kind="studio"] .slot.playing{box-shadow:inset 0 0 0 1px var(--accent2)}
+  :root[data-theme-kind="studio"] .cell.current{outline-color:var(--accent2)}
+  :root[data-theme-kind="studio"] .drum-pad{background:var(--panel2); color:var(--text); border-color:var(--line)}
+  :root[data-theme-kind="studio"] .drum-pad::before{background:radial-gradient(circle,var(--accent),transparent 62%)}
+  :root[data-theme-kind="studio"] .xy-pad{background:repeating-linear-gradient(90deg,transparent 0 calc(100% / 14 - 1px),var(--line) calc(100% / 14 - 1px) calc(100% / 14)),repeating-linear-gradient(0deg,transparent 0 calc(100% / 8 - 1px),var(--line) calc(100% / 8 - 1px) calc(100% / 8)),var(--panel2)}
+  :root[data-theme-kind="studio"] .field-error{color:var(--accent)}
+  :root[data-theme-kind="studio"] :is(button,input,select,textarea,[tabindex]):focus-visible{outline-color:var(--theme-focus)}
+  :root[data-theme="set_list"] .panel{border-radius:5px}
+  :root[data-theme="set_list"] :is(h1,.slot .big){font-family:Georgia,serif}
+  :root[data-theme="set_list"] .slot{border-radius:0; border-width:0 0 3px; font-size:1.05rem}
+  :root[data-theme="set_list"] .slot .big{font-size:1.65rem}
+  :root[data-theme="set_list"] .titlebar{border-top:4px solid var(--accent)}
+  :root[data-theme="set_list"] .panel > .section{background-image:repeating-linear-gradient(transparent 0,transparent 31px,#8679520a 31px,#8679520a 32px)}
+  :root[data-theme="pedal_board"] .titlebar{background:#234337; color:#eef1dc}
+  :root[data-theme="pedal_board"] .titlebar .sub{color:#d2dfc9}
+  :root[data-theme="pedal_board"] h1{font-family:"Arial Rounded MT Bold",system-ui,sans-serif; font-weight:850}
+  :root[data-theme="pedal_board"] .slot{border-radius:10px 10px 4px 4px; border-bottom-width:5px}
+  :root[data-theme="pedal_board"] .slot .big{font-size:1.4rem}
+  :root[data-theme="pedal_board"] .cell{border-radius:14px}
+  :root[data-theme="tape_notes"] .titlebar{border-top:4px solid var(--accent2)}
+  :root[data-theme="tape_notes"] .slot{border-radius:0; border-width:1px 0 0}
+  :root[data-theme="tape_notes"] .slot .big{font:700 1.4rem ui-monospace,monospace}
+  :root[data-theme="tape_notes"] .mini-readout{font-family:ui-monospace,monospace}
   @media (prefers-reduced-motion: reduce){
     *, *::before, *::after{
       scroll-behavior:auto !important;
@@ -233,6 +275,7 @@
     }
   }
   @media (forced-colors: active){
+    :root[data-theme-kind="studio"] :is(button,input,select,textarea,[tabindex]):focus-visible{outline-color:Highlight}
     :where(button, input, select, textarea, [tabindex]):focus-visible{
       outline:3px solid Highlight;
     }
@@ -268,7 +311,7 @@
   <div class="panel">
     <div class="titlebar">
       <div>
-        <h1>Pocket Chordsmith v68</h1>
+        <h1>Pocket Chordsmith v70</h1>
         <div class="sub">Pocket Audio Core bridge build</div>
       </div>
       <div class="sub" id="statusText" role="status" aria-live="polite" aria-atomic="true">Tap Play to begin audio</div>
@@ -320,6 +363,22 @@
         </div>
       </div>
       <div class="progression" id="progressionSlots"></div>
+      <div class="chord-audition" aria-label="Selected chord audition">
+        <div class="row">
+          <button class="pill" id="hearChordBitBtn">Hear this bit</button>
+          <button class="pill" id="stopChordBitBtn" disabled>Stop audition</button>
+          <span class="tiny" id="chordAuditionRange"></span>
+        </div>
+        <details>
+          <summary>Passage and listening cue</summary>
+          <div class="row">
+            <label class="sub">Lead-in <select id="chordAuditionLead" class="tiny-select"><option value="0">None</option><option value="1" selected>1 bar</option><option value="2">2 bars</option></select></label>
+            <label class="sub">Tail <select id="chordAuditionTail" class="tiny-select"><option value="0.5">0.5 s</option><option value="1" selected>1 s</option><option value="2">2 s</option></select></label>
+          </div>
+          <p class="tiny">Listen for bass meeting the new chord, and space between notes. Not automatically checked. Change the chord or levels; Undo reverses your last edit. Use Play section for long held notes.</p>
+        </details>
+        <p class="tiny" id="chordAuditionStatus" role="status" aria-live="polite"></p>
+      </div>
     </div>
     <div class="section">
       <div class="section-title">
@@ -413,6 +472,7 @@
             <div class="row">
               <label class="sub"><input id="guitarEnabledToggle" type="checkbox"> Enabled</label>
               <select class="tiny-select" id="guitarToneSelect">
+                <option value="campfire_acoustic">Campfire Acoustic</option>
                 <option value="clean">Clean</option>
                 <option value="crunch">Crunch</option>
                 <option value="high_gain">High gain</option>
@@ -433,7 +493,9 @@
               <option value="alternate">Alternate</option>
             </select>
             <label class="sub">Guitar <input id="guitarVolume" type="range" min="0" max="1" step="0.01" value="0.66"></label>
+              <label class="sub">Performance <select class="tiny-select" id="guitarPerformanceSelect"><option value="grid">Grid</option><option value="strum_pick">Campfire strum + pick</option></select></label>
           </div>
+            <div class="tiny" id="guitarPerformanceNote" hidden></div>
           <div class="row">
             <label class="sub">Rhythm preset
               <select class="tiny-select preset-select" id="guitarPresetSelect"></select>
@@ -908,7 +970,7 @@
             <div class="label" style="margin:0">Interface</div>
             <div class="row">
               <label class="sub">Theme</label>
-              <select class="select" id="themeSelect"><option value="night">Night</option><option value="ocean">Ocean</option><option value="forest">Forest</option><option value="sunset">Sunset</option></select>
+              <select class="select" id="themeSelect"><option value="night">Chordsmith blue (Night)</option><option value="ocean">Ocean</option><option value="forest">Forest</option><option value="sunset">Sunset</option><option value="set_list">Set List</option><option value="pedal_board">Pedal Board</option><option value="tape_notes">Tape Notes</option></select>
             </div>
             <div class="row adv-only">
               <label class="sub">Bass mode</label>
@@ -980,7 +1042,7 @@
               </div>
               <div class="tiny handoff-transfer-status" id="mobileTransferStatus">Build a mobile transfer from the current song.</div>
             </div>
-            <div class="tiny" id="pocketAudioCoreStatus">Pocket Audio Core 0.2.0 - PCS schema 16/17 - profile-aware reference rendering; exact backend parity still uses listening gates.</div>
+            <div class="tiny" id="pocketAudioCoreStatus">Pocket Audio Core 0.3.0 - PCS schema 16/17 - profile-aware reference rendering; exact backend parity still uses listening gates.</div>
             <div class="row">
               <select class="tiny-select" id="midiExportModeSelect">
                 <option value="quantized" selected>MIDI: Quantized</option>
