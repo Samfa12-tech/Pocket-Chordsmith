@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.51` |
+| Source version | `0.6.52` |
 | Project schema version | `3` |
 | Latest published version | `0.6.50` |
 | Latest published tag | `pocket-daw-v0.6.50` |
@@ -26,7 +26,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.51 is the unreleased family candidate: bounded cache/residency and hydration recovery, Campfire Acoustic, finite native passage audition, reversible Finish comparison, calibrated meters/final WAV checks, arranged native Godot exports, and menu/focus/overflow corrections. See the repository-root implementation ledger for scoped source/runtime evidence.
+- 0.6.52 is the unreleased replacement family candidate, based on independently accepted PR124 commit 497d2fa7c9c72d0bfe9febd1b417892f8fd52442. It retains bounded cache/residency and hydration recovery, Campfire Acoustic, finite native passage audition, reversible Finish comparison, calibrated meters/final WAV checks, arranged native Godot exports, and menu/focus/overflow corrections.
+- The frozen 0.6.51 candidate is withheld after a native Open dialog blocked commands. This replacement makes file selection asynchronous, preserves Cancel without a second picker, and rejects stale project/recovery/MIDI startup and playback-preparation completions. The original 0.6.51 artifact and partial installed evidence remain preserved; they are not a complete installed pass for this replacement.
 - Installer preparation, exact installed PCM/MIDI/export/device checks, retained listening evidence and parent review are separate gates. Candidate receipts and attestations identify tested bytes; this source status does not claim a new installed or public pass.
 - The latest public and recorded installed-smoke version remains 0.6.50 at its exact tested commit. The unchanged itch bootstrapper is not a new full-installer upload target.
 

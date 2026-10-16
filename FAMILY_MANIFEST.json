@@ -79,7 +79,7 @@
       "path": "apps/pocket-daw",
       "kind": "native-windows-app",
       "versions": {
-        "source": "0.6.51",
+        "source": "0.6.52",
         "projectSchema": "3",
         "latestPublished": "0.6.50",
         "lastInstalledSmoke": "0.6.50"
