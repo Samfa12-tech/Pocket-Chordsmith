@@ -115,3 +115,19 @@ Original-head hosted counts remain distinct: CI38888034223 had Chordsmith 166
 desktop/touch E2E, five desktop genre-audio and eight baseline cross-browser;
 DJ 108 E2E and six baseline; Core 213, all 13 jobs and both CodeQL languages
 green. New-head hosted acceptance must be checked separately.
+
+## Capped history follow-up
+
+Re-review reproduced an additional cap case: 39 genuine edits, Apply, then a
+same-chord no-op evicted the oldest history item, so whole-prefix validation
+refused Undo even though its Apply entry was retained. The scoped record now
+also owns the actual history array and validates the retained suffix ending at
+its Apply entry. Only one trailing identical-source no-op snapshot is removable;
+earlier cap eviction is tolerated. A changed source, replacement history array
+or unrelated later snapshot still refuses Undo without altering that history.
+
+The exact failing desktop/touch cases are retained; the correction passes all
+39 comparison tests across Chromium desktop/touch and Firefox, including the
+39-edit case restoring strum_up and preserving all surviving genuine history.
+This narrow follow-up preserves the prior review head and requires new package
+and website provenance before promotion.

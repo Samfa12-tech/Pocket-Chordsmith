@@ -2,17 +2,18 @@ let chordComparison=null,chordComparisonUndo=null;
 function comparisonChordMode(){return chordAudition?.chordMode||state.chordPlayMode;}
 function chordComparisonBusy(){return transportBusy||state.drumRecordToGrid||state.xyRecordToGrid;}
 function chordComparisonCurrent(){return chordComparison&&chordComparison.source===JSON.stringify(exportProject())&&chordComparison.range===chordBitPlan()?.label;}
-function chordComparisonUndoCurrent(){
+function chordComparisonUndoDepth(){
 const edit=chordComparisonUndo,history=state.undoStack;
-return !!edit&&edit.history.length>0&&edit.after===JSON.stringify(exportProject())&&history.length>=edit.history.length
- &&edit.history.every((snap,index)=>history[index]===snap)&&history.slice(edit.history.length).every(snap=>snap===edit.after);
+if(!edit||edit.stack!==history||edit.after!==JSON.stringify(exportProject()))return 0;
+const depth=history.length-(history.at(-1)===edit.after?1:0),offset=edit.history.length-depth;
+return depth>0&&offset>=0&&history.slice(0,depth).every((snap,index)=>snap===edit.history[offset+index])?depth:0;
 }
 function renderChordComparison(){
 const box=document.getElementById("chordComparison");if(!box)return;
 const ready=!!chordComparisonCurrent(),busy=chordComparisonBusy();
 for(const action of ["a","b","apply"])box.querySelector(`[data-compare=${action}]`).disabled=!ready||busy||(action==="apply"&&(chordComparison.example||chordComparison.a===chordComparison.b));
 box.querySelector("[data-compare=stop]").disabled=!chordAudition;
-box.querySelector("[data-compare=undo]").disabled=chordComparison?.example||!chordComparisonUndoCurrent();
+box.querySelector("[data-compare=undo]").disabled=chordComparison?.example||!chordComparisonUndoDepth();
 }
 function discardChordComparison(message="Discarded. Your song is unchanged."){
 chordComparison=null;stopPlayback({forAudition:true});document.getElementById("chordComparisonStatus").textContent=message;renderChordComparison();
@@ -21,7 +22,7 @@ async function chordComparisonAction(action){
 const status=document.getElementById("chordComparisonStatus");
 if(action==="discard"){discardChordComparison();return;}
 if(action==="stop"){stopPlayback({forAudition:true});status.textContent="Comparison stopped. A or B replays the same passage.";renderChordComparison();return;}
-if(action==="undo"){if(chordComparison?.example||!chordComparisonUndoCurrent())return;state.undoStack.length=chordComparisonUndo.history.length;chordComparisonUndo=null;discardChordComparison("");undoLastChange();return;}
+if(action==="undo"){const depth=chordComparisonUndoDepth();if(chordComparison?.example||!depth)return;state.undoStack.length=depth;chordComparisonUndo=null;discardChordComparison("");undoLastChange();return;}
 if(chordComparisonBusy()){status.textContent="Stop recording or preparation before comparing.";return;}
 if(action==="prepare"||action.startsWith("example")){
 if(!chordBitPlan()||!state.chordsOn){status.textContent="Select a chord bar and enable Chords first. Your song is unchanged.";return;}
@@ -36,7 +37,7 @@ action=action==="example-a"?"a":"b";
 if(!chordComparisonCurrent()){discardChordComparison("Source or selection changed. Prepare again.");return;}
 if(action==="apply"){
 if(chordComparison.example||chordComparison.a===chordComparison.b)return;
-const mode=chordComparison.b;chordComparison=null;stopPlayback({forAudition:true});pushUndoState();const history=state.undoStack.slice();state.chordPlayMode=mode;markProjectDirty();renderAll();chordComparisonUndo={after:JSON.stringify(exportProject()),history};status.textContent="Whole-song chord performance applied. Undo restores the previous setting.";renderChordComparison();return;
+const mode=chordComparison.b;chordComparison=null;stopPlayback({forAudition:true});pushUndoState();const history=state.undoStack.slice();state.chordPlayMode=mode;markProjectDirty();renderAll();chordComparisonUndo={after:JSON.stringify(exportProject()),history,stack:state.undoStack};status.textContent="Whole-song chord performance applied. Undo restores the previous setting.";renderChordComparison();return;
 }
 if(action==="a"||action==="b"){
 const owner=chordComparison;const audition=await hearChordBit(owner[action]);
