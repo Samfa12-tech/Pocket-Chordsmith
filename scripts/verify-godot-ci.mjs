@@ -36,6 +36,7 @@ try {
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_wav_ending_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_cache_residency_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_async_loading_test.gd", ["--audio-driver", "Dummy"]);
+  runScript("res://addons/pocket_chordsmith/tests/pcs_audio_prepared_worker_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_owned_loader_test.gd", ["--audio-driver", "Dummy"]);
   const shutdown = runScript("res://addons/pocket_chordsmith/tests/pcs_audio_owned_loader_shutdown_test.gd", ["--audio-driver", "Dummy"]);
   assertGodotOwnedLoaderShutdownResult(shutdown.stdout);

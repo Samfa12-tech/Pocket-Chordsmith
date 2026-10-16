@@ -34,12 +34,14 @@ writeFileSync(resolve(workspace, "sfx.wav"), encodePcm16WavBytes({ channels: [pu
 run(["--headless", "--editor", "--quit"], "import.log");
 run([...(headless ? ["--headless"] : []), "--audio-driver", driver, "--max-fps", "60", "--script", "res://addons/pocket_chordsmith/tools/measure_runtime_audio_budget.gd"], "runtime.log");
 const measured = JSON.parse(readFileSync(resolve(workspace, "runtime-budget.json"), "utf8"));
+const teardown = JSON.parse(readFileSync(resolve(workspace, "runtime-teardown.json"), "utf8"));
+if (teardown.ok !== true || teardown.remaining_playbacks !== 0) throw new Error(`Audio playback teardown incomplete; see ${workspace}`);
 const stats = values => {
   const sorted = [...values].sort((a, b) => a - b);
   return { count: sorted.length, max: sorted.at(-1), p95: sorted[Math.floor(sorted.length * 0.95)] };
 };
 const summary = { workspace, sourceSha256: hash(sourceBytes), fixtureSha256: hash(fixture), headless, requestedDriver: driver, driver: measured.driver,
-  cold: measured.cold, coldFramesMs: stats(measured.cold_frame_gaps_ms),
+  teardown, cold: measured.cold, coldFramesMs: stats(measured.cold_frame_gaps_ms),
   baselineFramesMs: stats(measured.baseline_frame_gaps_ms), musicFramesMs: stats(measured.music_frame_gaps_ms), gameSfxFramesMs: stats(measured.game_frame_gaps_ms),
   warmPlayMs: stats(measured.warm_play_ms), residentPcmBytes: measured.resident_pcm_bytes, residentStreams: measured.resident_streams,
   sfxRequests: measured.game_sfx_requests, sfxPeak: measured.game_sfx_peak,

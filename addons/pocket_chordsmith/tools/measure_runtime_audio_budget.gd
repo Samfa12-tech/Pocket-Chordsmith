@@ -49,7 +49,16 @@ func _run():
 	label.text="Pocket Audio runtime budget\nWarm music + periodic game SFX + moving UI.\nFrame timing and SFX bus PCM are measured.\nNo installed-app/device-consumed/listening claim."
 	phase=0;measuring=true;frame_gaps.clear();previous_us=Time.get_ticks_usec();await create_timer(3).timeout;var baseline_gaps=frame_gaps.duplicate();measuring=false
 	phase=0;measuring=true;frame_gaps.clear();previous_us=Time.get_ticks_usec();music.play();await create_timer(3).timeout;music.stop();var music_gaps=frame_gaps.duplicate();measuring=false
-	capture.clear_buffer();phase=1;measuring=true;frame_gaps.clear();previous_us=Time.get_ticks_usec();music.play();await create_timer(3).timeout;music.stop();measuring=false
+	capture.clear_buffer();phase=1;measuring=true;frame_gaps.clear();previous_us=Time.get_ticks_usec();music.play();await create_timer(3).timeout;measuring=false
+	# Retain weak observations only. Waiting for two gameplay frames alone does
+	# not prove that the audio mixer has released its stopped playbacks.
+	var playback_refs: Array[WeakRef] = []
+	for player in music.find_children("*", "AudioStreamPlayer", true, false):
+		if player.playing:
+			playback_refs.append(weakref(player.get_stream_playback()))
+	if sfx.playing:
+		playback_refs.append(weakref(sfx.get_stream_playback()))
+	music.stop()
 	var frames=capture.get_buffer(capture.get_frames_available());var sfx_peak=0.0
 	for frame in frames: sfx_peak=max(sfx_peak,abs(frame.x),abs(frame.y))
 	if DisplayServer.get_name()!="headless":
@@ -65,9 +74,26 @@ func _run():
 	music.queue_free()
 	await process_frame
 	await process_frame
+	var drain_started := Time.get_ticks_usec()
+	var deadline := Time.get_ticks_msec() + 2000
+	while _remaining_playbacks(playback_refs) > 0 and Time.get_ticks_msec() < deadline:
+		await process_frame
+	var teardown := {"playbacks_observed": playback_refs.size(), "remaining_playbacks": _remaining_playbacks(playback_refs), "drain_wait_us": Time.get_ticks_usec() - drain_started}
+	teardown["ok"] = teardown.remaining_playbacks == 0
+	var teardown_file := FileAccess.open("res://runtime-teardown.json", FileAccess.WRITE)
+	teardown_file.store_string(JSON.stringify(teardown))
+	teardown_file.close()
+	print(JSON.stringify({"test": "runtime-audio-budget-teardown", "result": teardown}))
 	AudioServer.remove_bus_effect(bus,0)
 	AudioServer.remove_bus(bus)
-	quit(0 if cold.ok and sfx_peak>0.001 and sfx_count>0 else 1)
+	quit(0 if cold.ok and sfx_peak>0.001 and sfx_count>0 and teardown.ok else 1)
+
+func _remaining_playbacks(playback_refs: Array[WeakRef]) -> int:
+	var remaining := 0
+	for playback_ref in playback_refs:
+		if playback_ref.get_ref() != null:
+			remaining += 1
+	return remaining
 
 
 

@@ -1759,3 +1759,29 @@ Implemented/tested source awaits independent review. Existing Godot 1.3 ZIPs and
 the frozen DAW 0.6.51 installer are unchanged; no replacement release candidate,
 installation, publication or listing submission occurs in this source follow-up.
 See addons/pocket_chordsmith/docs/OWNED_RESOURCE_LOADING_2026-10-16.md.
+
+
+## Cold prepared-WAV worker follow-up (source candidate)
+
+The asynchronous imported-stem route moves the existing WAV duplicate/padding
+policy onto the owned bounded worker. A shared helper preserves source PCM,
+authored loops, cache keys/identities and warnings. Cached raw PCM and stale-rate
+entries also prepare on the worker. Original cancellation/profile/epoch/tree
+checks remain; output-rate snapshots are checked before cache publication.
+Synchronous APIs and directly assigned AudioStream values keep their old behavior.
+
+Three matched serial CPU pairs: baseline main preparation 20.492/21.936/21.095 ms
+versus prototype 1.229/1.189/1.067 ms, all processes and watched teardown clean.
+The original 16.667 ms main budget passes; total cold completion is slower at
+400–417 ms versus 286–318 ms. One prototype game/SFX frame of 43.602 ms fails the
+33.333 ms bound and remains open. Final alias-preserving source measured main
+1.447 ms, warm Play 1.239 ms and unchanged 92,164,224 logical PCM bytes.
+
+The first benchmark's playback teardown warning and first expanded fixture's
+Resource identity failure remain retained. The measurement tool now observes
+actual playback release with a failing two-second timeout on both baseline and
+prototype; the global error/leak guard is unchanged. This is source/runtime
+validation, not a replacement frozen release candidate or publication approval.
+See OWNED_RESOURCE_LOADING_2026-10-16.md for protocol, results and remaining limits.
+
+A final-source headless Godot 4.6.3/Dummy 48 kHz AudioServer capture also passes both native full-mix routes: all 216,000 reference frames (2.0-6.5 seconds), maximum error 1.6465783e-6, RMS error 2.9295904e-7, zero capture-buffer drops, and rejected silence controls. This is runtime PCM evidence, not a rendered/device/listening pass for this follow-up. The corrected full source gate passes 104 prepared-worker checks, 157 owned-lifecycle checks, 23 async/82 audition checks, shutdown completion markers, clock/origin/mix contracts and 152-entry addon packaging. Both unchanged global result and scoped shutdown validator suites pass 12 Node tests.

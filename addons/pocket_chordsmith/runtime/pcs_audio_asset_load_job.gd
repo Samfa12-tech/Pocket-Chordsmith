@@ -3,16 +3,42 @@ extends Node
 ## A short-lived loading-scene job owns and drains one background resource read.
 ## It lives under the scene root so freeing a conductor cannot abandon the job.
 
+const PreparedWav := preload("res://addons/pocket_chordsmith/runtime/pcs_prepared_wav.gd")
+
 class AudioReader:
 	extends RefCounted
 	var path := ""
 	var result: AudioStream
+	var source_stream: AudioStream
+	var prepare_wav_endings := false
+	var loop_sections := false
+	var output_mix_rate := 48000
+	var prepared_cacheable := false
+	var prepared_is_copy := false
+	var preparation_warning := ""
+	var worker_prepare_us := 0
 	func read_stream() -> void:
-		result = ResourceLoader.load(path, "AudioStream") as AudioStream
+		result = source_stream if source_stream != null else ResourceLoader.load(path, "AudioStream") as AudioStream
+		if result != null and prepare_wav_endings:
+			var started := Time.get_ticks_usec()
+			var prepared := PreparedWav.prepare(result, loop_sections, output_mix_rate)
+			prepared_is_copy = prepared.stream != result
+			result = prepared.stream
+			prepared_cacheable = prepared.cache_prepared
+			preparation_warning = prepared.warning
+			worker_prepare_us = Time.get_ticks_usec() - started
 
 signal completed(stream: AudioStream)
 
 var asset_path := ""
+var source_stream: AudioStream
+var prepare_wav_endings := false
+var loop_sections := false
+var output_mix_rate := 48000
+var prepared_cacheable := false
+var prepared_is_copy := false
+var preparation_warning := ""
+var worker_prepare_us := 0
 var _request_error := OK
 var _consumer_completed := false
 var _task_id := -1
@@ -22,6 +48,10 @@ var _exiting := false
 func _ready() -> void:
 	_reader = _create_reader()
 	_reader.path = asset_path
+	_reader.source_stream = source_stream
+	_reader.prepare_wav_endings = prepare_wav_endings
+	_reader.loop_sections = loop_sections
+	_reader.output_mix_rate = output_mix_rate
 	_task_id = WorkerThreadPool.add_task(_reader.read_stream, false, "Pocket audio resource read")
 	_request_error = FAILED if _task_id < 0 else OK
 
@@ -43,6 +73,10 @@ func _drain_worker() -> AudioStream:
 	if _task_id >= 0:
 		if WorkerThreadPool.wait_for_task_completion(_task_id) == OK:
 			stream = _reader.result
+			prepared_cacheable = _reader.prepared_cacheable
+			prepared_is_copy = _reader.prepared_is_copy
+			preparation_warning = _reader.preparation_warning
+			worker_prepare_us = _reader.worker_prepare_us
 	_task_id = -1
 	_reader = null
 	return stream

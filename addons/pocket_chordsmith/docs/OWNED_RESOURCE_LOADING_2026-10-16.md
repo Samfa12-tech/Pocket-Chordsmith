@@ -59,7 +59,8 @@ or fix the engine's public threaded API.
 
 ## PCM evidence and remaining gates
 
-Cold EOF-padding/copy work is still synchronous. The final pooled eight-by-60-
+Before the worker-copy follow-up below, EOF-padding/copy work was synchronous.
+That initial pooled eight-by-60-
 second fixture measured 20.081 ms main-thread preparation, above the 16.667 ms
 target. Its 92,164,224 logical cached PCM bytes and warm Play maximum of 0.454 ms
 pass only their scoped bounds. Baseline and initial owned-thread runs also exceed
@@ -78,3 +79,65 @@ output/device, general dropout or human level-matched listening pass. Godot
 publication and representative-game acceptance remain open until corrected
 source and actual candidates are independently reviewed. The frozen DAW 0.6.51
 installer and existing held Godot ZIPs are unchanged.
+
+
+## Worker-side prepared-WAV copy follow-up
+
+The asynchronous imported `res://` stem route now performs WAV duplication,
+section-loop setup and ending-padding copies in the same owned pooled reader.
+A shared pure helper applies the existing PCM/loop policy to both synchronous
+and worker callers. It receives an output-rate snapshot and never accesses
+scene nodes or AudioServer from its worker. Cached raw PCM and obsolete ending
+rate snapshots also use the worker. Legacy synchronous APIs and directly assigned
+AudioStream values retain their existing synchronous behavior.
+
+Only the consumer publishes caches, after the existing generation, profile,
+signature and tree guards plus an output-rate check. Stop/free ownership and
+bounded pool concurrency are unchanged. Prepared copies retain one cache entry;
+unchanged compressed/non-WAV/unsupported-rate fallbacks retain their historical
+raw/prepared aliases. Authored loop points and original resources/files are
+preserved. Warnings are delivered on the main thread.
+
+The main-thread metric includes submission/preflight and resumed publication;
+worker wait remains separate. Three alternating serial baseline/prototype CPU
+pairs used the same Godot 4.6.3, Dummy driver, eight 60-second stereo 48 kHz assets,
+fixture/source hashes, inclusive timing boundary and teardown protocol. OS cache
+was not flushed. The baseline processing algorithm was unchanged; only its timing
+boundary and measurement-tool cleanup matched the prototype.
+
+| Pair | Baseline main preparation | Worker-copy main preparation |
+| --- | ---: | ---: |
+| 1 | 20.492 ms | 1.229 ms |
+| 2 | 21.936 ms | 1.189 ms |
+| 3 | 21.095 ms | 1.067 ms |
+
+All six process/teardown guards pass. The original 16.667 ms main-preparation
+budget is met by all three prototype runs. Total cold completion took about
+400–417 ms versus baseline 286–318 ms; reduced main-thread blocking does not mean
+faster overall loading. One prototype game/SFX frame reached 43.602 ms, failing
+its 33.333 ms bound; it is retained without an assumed cause or discarded outlier.
+Broader sustained-frame and representative-game acceptance remains open.
+
+After preserving fallback cache aliases, a fresh runtime run measured main
+preparation 1.447 ms, warm Play 1.239 ms, cold-frame maximum 16.741 ms and the same
+92,164,224 logical PCM bytes. This scoped pass does not erase the 43.602 ms failure.
+
+The first optimization benchmark failed the unchanged ObjectDB/resource guard.
+Verbose evidence identifies audio-playback objects still held at measurement-tool
+shutdown. The tool now records weak references to its own active playbacks,
+stops/frees players, and waits at most two seconds for actual release. A timeout
+or missing/incomplete teardown report fails; the global error/leak guard is
+unchanged. The identical cleanup is applied to baseline controls. Measured
+teardown waits vary up to about 100 ms after the initial two frames. Failed runs
+remain retained and are not relabeled as successful.
+
+Worker controls cover PCM8/PCM16, mono/stereo, 44.1/48 kHz sources, loop/ending
+policies, immutable imported resources/files, cached raw PCM, stale-rate metadata,
+authored loops and unchanged fallback cache identities. An initial fixture
+incorrectly compared a ResourceSaver constructor object with a separately loaded
+Resource; that failure is retained. The corrected fixture retains the actual
+imported Resource and adds explicit preconditions. Numerical CPU evidence alone
+is not rendered game, peak process-memory, device-output or listening acceptance.
+The frozen DAW installer and held addon release artifacts are unchanged.
+
+A final-source headless Godot 4.6.3/Dummy 48 kHz AudioServer capture also passes both native full-mix routes: all 216,000 reference frames (2.0-6.5 seconds), maximum error 1.6465783e-6, RMS error 2.9295904e-7, zero capture-buffer drops, and rejected silence controls. This is runtime PCM evidence, not a rendered/device/listening pass for this follow-up. The corrected full source gate passes 104 prepared-worker checks, 157 owned-lifecycle checks, 23 async/82 audition checks, shutdown completion markers, clock/origin/mix contracts and 152-entry addon packaging. Both unchanged global result and scoped shutdown validator suites pass 12 Node tests.

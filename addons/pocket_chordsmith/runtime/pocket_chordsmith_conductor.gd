@@ -4,6 +4,7 @@ class_name PocketChordsmithConductor
 
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
+const PreparedWav := preload("res://addons/pocket_chordsmith/runtime/pcs_prepared_wav.gd")
 const AudioAssetLoadJob := preload("res://addons/pocket_chordsmith/runtime/pcs_audio_asset_load_job.gd")
 
 const NATIVE_BASS_SAMPLE_RATE := 44100
@@ -608,7 +609,7 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 	var generation := _audio_prepare_generation
 	var profile := playback_profile
 	var preparation_signature := _audio_prewarm_signature(true, false)
-	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": warnings.size(), "warnings": warnings.duplicate(), "max_asset_load_us": 0, "max_thread_wait_us": 0, "threaded_assets": 0, "cached_streams": _audio_stream_cache.size()}
+	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": warnings.size(), "warnings": warnings.duplicate(), "max_asset_load_us": 0, "max_thread_wait_us": 0, "max_worker_prepare_us": 0, "threaded_assets": 0, "cached_streams": _audio_stream_cache.size()}
 	if profile == null or not is_inside_tree():
 		report.warnings.append("A playback profile and active loading scene are required for section preparation.")
 		return report
@@ -628,11 +629,25 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 			report.cancelled = true
 			report.cached_streams = _audio_stream_cache.size()
 			return report
+		var main_started := Time.get_ticks_usec()
+		var main_before_wait_us := 0
 		if value is String:
 			var path := str(value)
 			var key := _prepared_stem_cache_key(path) if profile.preserve_prepared_wav_endings or profile.loop_prepared_sections else _audio_cache_key(path)
-			if path.begins_with("res://") and not seen.has(key) and not _audio_stream_cache.has(key) and not _audio_stream_cache.has(_audio_cache_key(path)) and ResourceLoader.exists(path):
+			var cached_prepared := _audio_stream_cache.get(key) as AudioStream
+			if cached_prepared != null and cached_prepared.has_meta("pcs_guard_mix_rate") and cached_prepared.get_meta("pcs_guard_mix_rate") != AudioServer.get_mix_rate():
+				_audio_stream_cache.erase(key)
+			var raw_key := _audio_cache_key(path)
+			var raw := _audio_stream_cache.get(raw_key) as AudioStream
+			var raw_needs_copy: bool = raw is AudioStreamWAV and raw.loop_mode == AudioStreamWAV.LOOP_DISABLED and raw.format in [AudioStreamWAV.FORMAT_8_BITS, AudioStreamWAV.FORMAT_16_BITS] and (profile.preserve_prepared_wav_endings or profile.loop_prepared_sections)
+			if path.begins_with("res://") and not seen.has(key) and not _audio_stream_cache.has(key) and (raw == null or raw_needs_copy) and ResourceLoader.exists(path):
 				var job = _create_audio_asset_load_job(path)
+				job.source_stream = raw
+				job.prepare_wav_endings = profile.preserve_prepared_wav_endings or profile.loop_prepared_sections
+				job.loop_sections = profile.loop_prepared_sections
+				job.output_mix_rate = AudioServer.get_mix_rate()
+				var requested_mix_rate: int = job.output_mix_rate
+				var needs_output_rate_guard: bool = job.prepare_wav_endings and not job.loop_sections
 				get_tree().root.add_child(job)
 				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 					job.detach_consumer()
@@ -641,10 +656,12 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 					return report
 				_pending_audio_load_jobs.append(job)
 				var waiting := Time.get_ticks_usec()
+				main_before_wait_us = waiting - main_started
 				var stream: AudioStream = await job.completed
+				main_started = Time.get_ticks_usec()
 				_pending_audio_load_jobs.erase(job)
 				report.max_thread_wait_us = maxi(report.max_thread_wait_us, Time.get_ticks_usec() - waiting)
-				if job.was_detached() or generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+				if (needs_output_rate_guard and requested_mix_rate != AudioServer.get_mix_rate()) or job.was_detached() or generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 					report.cancelled = true
 					report.cached_streams = _audio_stream_cache.size()
 					return report
@@ -653,11 +670,22 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 					report.warnings.append("Could not load imported audio resource: %s" % path)
 					seen[key] = true
 					continue
-				_audio_stream_cache[_audio_cache_key(path)] = stream
+				# The worker publishes an immutable prepared copy only after all original
+				# consumer/profile/epoch guards and the output-rate snapshot still match.
+				_audio_stream_cache[key if job.prepared_cacheable else raw_key] = stream
+				if job.prepared_cacheable and key != raw_key:
+					if job.prepared_is_copy:
+						_audio_stream_cache.erase(raw_key)
+					else:
+						# Preserve the existing raw/prepared aliases for unchanged
+						# compressed, non-WAV and unsupported-rate fallbacks.
+						_audio_stream_cache[raw_key] = stream
+				if not job.preparation_warning.is_empty():
+					push_warning(job.preparation_warning)
+				report.max_worker_prepare_us = maxi(report.max_worker_prepare_us, job.worker_prepare_us)
 				report.threaded_assets += 1
-		var started := Time.get_ticks_usec()
 		_prewarm_audio_value(value, seen, report, false, true)
-		report.max_asset_load_us = maxi(report.max_asset_load_us, Time.get_ticks_usec() - started)
+		report.max_asset_load_us = maxi(report.max_asset_load_us, main_before_wait_us + Time.get_ticks_usec() - main_started)
 		report.cached_streams = _audio_stream_cache.size()
 	report.ok = report.failed == 0
 	return report
@@ -2516,52 +2544,15 @@ func _load_prepared_stem_audio_stream(value) -> AudioStream:
 		if not key.is_empty() and source != null:
 			_audio_stream_cache[key] = source
 		return source
-	var wav := source as AudioStreamWAV
-	if wav.loop_mode != AudioStreamWAV.LOOP_DISABLED:
-		return source # Preserve authored loop points and length exactly.
-	if wav.format != AudioStreamWAV.FORMAT_16_BITS and wav.format != AudioStreamWAV.FORMAT_8_BITS:
-		push_warning("Prepared WAV ending preservation requires lossless PCM import; compressed stream is unchanged.")
-		_audio_stream_cache[key] = source
-		return source
-	if playback_profile.loop_prepared_sections:
-		# LOOP_KIT assets are exact-length section bodies. Godot's audio thread
-		# repeats them; gameplay frame timing must not stop/restart identical PCM.
-		var looped := wav.duplicate() as AudioStreamWAV
-		var loop_frame_bytes := (2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if wav.stereo else 1)
-		looped.loop_begin = 0
-		looped.loop_end = wav.data.size() / loop_frame_bytes
-		looped.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		looped.set_meta("pcs_native_section_loop", true)
-		_audio_stream_cache[key] = looped
-		if value is String:
+	var prepared := PreparedWav.prepare(source, playback_profile.loop_prepared_sections, AudioServer.get_mix_rate())
+	if not prepared.warning.is_empty():
+		push_warning(prepared.warning)
+	if prepared.cache_prepared:
+		_audio_stream_cache[key] = prepared.stream
+		if value is String and prepared.stream != source:
 			_audio_stream_cache.erase(_audio_cache_key(str(value)))
-		return looped
-	# Godot's stream-end lookahead fades the final 64 output frames; WAV's
-	# resampler also needs trailing history. Move both into bounded silence.
-	# Duplicate the resource, never mutate a caller-owned/imported stream or file.
-	var guard_frames := ceili(128.0 * wav.mix_rate / maxf(1.0, AudioServer.get_mix_rate())) + 4
-	if guard_frames > 4096:
-		push_warning("Prepared WAV rate needs an unsupported ending guard; stream is unchanged.")
-		_audio_stream_cache[key] = source
-		return source
-	guard_frames = maxi(8, guard_frames)
-	var guarded := wav.duplicate() as AudioStreamWAV
-	var pcm := wav.data
-	var frame_bytes := (2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if wav.stereo else 1)
-	var content_frames := pcm.size() / frame_bytes
-	var content_bytes := pcm.size()
-	pcm.resize(pcm.size() + guard_frames * frame_bytes)
-	for index in range(content_bytes, pcm.size()):
-		pcm[index] = 0
-	guarded.data = pcm
-	guarded.set_meta("pcs_content_frames", content_frames)
-	guarded.set_meta("pcs_eof_guard_frames", guard_frames)
-	guarded.set_meta("pcs_guard_mix_rate", AudioServer.get_mix_rate())
-	_audio_stream_cache[key] = guarded
-	if value is String:
-		# Retain one prepared PCM resource per path, including prewarm/repeated Play.
-		_audio_stream_cache.erase(_audio_cache_key(str(value)))
-	return guarded
+	return prepared.stream
+
 
 
 func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
