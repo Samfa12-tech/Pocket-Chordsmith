@@ -98,6 +98,19 @@ for (const entry of requiredEntries) {
   assertExists(entry);
 }
 
+// itch and other mirrors can mount the ZIP below a path prefix. Validate the
+// actual built HTML rather than accepting a working monorepo development page.
+for (const htmlEntry of ["index.html", "pocket_chordsmith_v69_core_bridge.html"]) {
+  const html = readFileSync(resolve(distDir, htmlEntry), "utf8");
+  const managedAssets = html.matchAll(/<(?:script|link)\b[^>]*\b(?:src|href)=["']([^"']+)["'][^>]*>/gi);
+  for (const [, asset] of managedAssets) {
+    if (asset.startsWith("/") || /^[a-z][a-z\d+.-]*:/i.test(asset)) {
+      throw new Error(`Built ${htmlEntry} has a non-relative asset URL: ${asset}`);
+    }
+    assertExists(asset.split(/[?#]/, 1)[0]);
+  }
+}
+
 run(process.execPath, [bestzipCli, outputZip, "*"], { cwd: distDir });
 
 const zipEntries = readZipEntries(outputZip);

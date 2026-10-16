@@ -1731,3 +1731,18 @@ See runtime acceptance and docs/FAMILY_RELEASE_CANDIDATES_2026-10-16.md for exac
 scope, candidate/public truth and remaining gates. No public upload or exact
 installed candidate pass is claimed by these source checks. Website work must
 preserve b2469ac41f721074868b89d1fbab9ccfea56e34f from fresh website main.
+
+## Exact web ZIP nested-hosting correction
+
+The clean66d Chordsmith ZIP fails a real nested-path HTTP smoke: Vite emitted
+root `/assets/` URLs for the compiled module/icons. Source browser and website
+mirror passes do not clear that archive failure. Vite now emits relative URLs;
+packaging validates script/link references in the built HTML and their files
+before writing a ZIP. Four replacement/unchanged-DJ checks pass at neutral nested
+upload paths in desktop/touch Chromium, with Campfire import, Core0.3, explicit
+Hear/Stop, no autoplay/source mutation and no failed local requests/page errors.
+An intermediate DJ probe used its reserved source-checkout URL and selected the
+repo loader first; that harness failure is retained separately. See the nested
+package report. Final clean-commit replacement bytes require their own receipt
+and exact decoded smoke. No canonical audio/version/dependency changes and no
+public upload. The frozen DAW0.6.51 receipt from66d is unchanged.
