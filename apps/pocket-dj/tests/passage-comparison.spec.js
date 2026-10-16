@@ -28,6 +28,7 @@ test('keyboard, narrow controls and active build guard',async({page})=>{
 await open(page);await page.evaluate(()=>{session.performance.buildActive=true;});await button(page,'prepare').click();await expect(page.locator('#djComparisonStatus')).toContainText('build/drop/fill');
 await page.evaluate(()=>{session.performance.buildActive=false;});await button(page,'prepare').focus();await page.keyboard.press('Enter');await expect(button(page,'b')).toBeEnabled();
 const rect=await button(page,'example-b').evaluate(el=>({height:el.getBoundingClientRect().height,width:el.getBoundingClientRect().width}));expect(rect.height).toBeGreaterThanOrEqual(44);expect(rect.width).toBeGreaterThanOrEqual(44);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+await expect(button(page,'example-b')).toHaveClass(/\bbtn\b/);await expect(page.locator('#djComparisonBass')).toHaveClass(/\binput\b/);
 });
 test('playable bass example produces real bus PCM and Stop releases it',async({page})=>{
 await open(page);await page.evaluate(async()=>{const section=getSection('A'),count=sectionStepCount(section);section.grid.bass=Array.from({length:count},(_,i)=>i%4===0?2:0);section.bassHold=Array(count).fill(false);section.bassSlide=Array(count).fill(false);await ensureAudio();window.__compareTap=audioCtx.createAnalyser();window.__compareTap.fftSize=2048;stemGains.bass.connect(window.__compareTap);});

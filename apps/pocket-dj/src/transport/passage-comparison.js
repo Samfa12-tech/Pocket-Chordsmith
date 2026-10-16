@@ -44,7 +44,8 @@ function bindDjComparison(){
 const box=document.createElement("details");box.id="djComparison";
 box.innerHTML='<summary>Compare bass balance</summary><p class="tiny">Temporary audition on the visible passage. A/B replay from the same start; Apply is the only action that changes the deck.</p><label>Proposed bass % <input id="djComparisonBass" type="number" min="0" max="100" step="5" value="50"></label><div class="row"><button data-compare="prepare">Prepare proposal</button><button data-compare="a">A · Original</button><button data-compare="b">B · Proposed</button><button data-compare="stop">Stop comparison</button><button data-compare="apply">Apply</button><button data-compare="discard">Discard</button><button data-compare="undo">Undo proposal</button></div><p class="tiny">Playable example on your passage: listen for space around the kick when bass is halved. Examples cannot be applied or saved.</p><div class="row"><button data-compare="example-a">Hear original example</button><button data-compare="example-b">Hear quieter bass example</button></div><p id="djComparisonStatus" class="tiny" role="status" aria-live="polite">Not compared. Nothing autoplays.</p>';
 document.getElementById("djAuditionControls").insertAdjacentElement("afterend",box);
-for(const button of box.querySelectorAll("button"))button.style.minHeight="44px";
+for(const button of box.querySelectorAll("button")){button.classList.add("btn");button.style.minHeight="44px";}
+box.querySelector("input").classList.add("input");
 for(const row of box.querySelectorAll(".row")){row.style.display="flex";row.style.flexWrap="wrap";row.style.gap="6px";}
 box.addEventListener("click",event=>{const action=event.target.closest("[data-compare]")?.dataset.compare;if(action)void djComparisonAction(action);});
 box.querySelector("input").addEventListener("input",()=>discardDjComparison("Proposal changed. Prepare again."));
