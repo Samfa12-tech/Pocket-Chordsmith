@@ -74,3 +74,36 @@ These are source integration regressions, not native MIDI/device acceptance.
 Capture fingerprint is unchanged. No Rust code, frozen installer, running app or
 source head under independent review was modified. A replacement build remains
 held until this separately reviewable follow-up is accepted.
+
+## Stopped-transport continuation correction
+
+Review of the next source candidate found that its integration hosts all reported
+an already-playing engine. When starting MIDI from stopped transport, the actual
+Play path awaited timeline/native preparation and could then call engine.play on
+a replacement project before the MIDI caller checked ownership again.
+
+MIDI startup now passes its ownership predicate into Play and timeline hydration/
+preparation. Checks occur after busy-paint, hydration and native-preparation awaits
+and before engine.play, metronome, plugin-boundary sync or late UI updates. The
+existing hydrator's owned metadata-repair callback advances the expected project
+identity; legitimate reload analysis does not cancel its own startup. A busy
+owner lets MIDI Stop clear its own overlay without an older completion clearing
+a newer preparation's state. Project reset invalidates that UI owner as well.
+
+The expanded suite calls the actual imported MIDI-start, Play, preparation,
+hydration, Stop and reset methods. Native/file/device and rendering boundaries
+are substituted, without mocking the ownership predicate. It covers delayed
+native preparation/reset, Stop, delayed paint, old/new preparation completion,
+normal stopped startup, actual hydration metadata repair and Stop during delayed
+file loading. No native-device or installed-app acceptance is inferred.
+
+This follow-up preserves the exact PR123 head for review. No native Rust/audio
+clock/capture source or dependency changes, installer preparation or running-app
+control is included. The semantic capture fingerprint remains unchanged; future
+exact-installer PCM/MIDI/export and native picker acceptance remain mandatory.
+
+Final source evidence:20/20 focused integration cases; exact prior PR123 source
+rejects five of those cases while fifteen controls pass. Full PR source1261 tests
+in108files and TypeScript pass. Initial negative-run setup errors (sandbox TEMP
+rename before tests and an unreleased fake preparation) are retained; corrected
+controls run actual assertions with workspace TEMP. No failed control is relabeled.

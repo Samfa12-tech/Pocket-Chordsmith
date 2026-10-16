@@ -1754,3 +1754,19 @@ regressions reject prior source12/13 with1positivecontrol; finalsource13/13 and
 sixcoordinatorchecks pass. Full PR source1254/108files andTypeScript pass. No native
 Rust changes or updated installed-device acceptance claimed. Frozen0.6.51 remains
 held; independent source review is required before a new-version candidate.
+
+### Stopped MIDI startup continuation follow-up
+
+The prior App integration hosts forced already-playing transport and missed native
+preparation during a stopped MIDI start. The next isolated source slice propagates
+ownership into actual Play/hydration/preparation before engine.play and later UI/
+metronome effects. Busy-owner cleanup protects both Stop and newer preparations;
+owned hydration metadata repair advances expected project identity. Expanded actual
+App suite20/20 passes, including reset/Stop after held native preparation, delayed
+paint, old/new ordering, actual hydration repair and Stop before file load returns.
+No native-device/installed acceptance inferred; original review heads preserved.
+Frozen0.6.51, source capture fingerprint, running unsaved project and release holds
+remain unchanged. Full final source/negative controls recorded separately.
+Final stopped-start slice:1261/108files+TypeScript PASS;20AppintegrationPASS,
+exact71f47f3 negativecontrol5FAIL/15PASS as expected. No Rust/native acquisition
+change; semantic fingerprint unchanged. New source review is still required.

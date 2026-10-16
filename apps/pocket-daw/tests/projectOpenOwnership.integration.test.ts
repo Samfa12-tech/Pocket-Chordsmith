@@ -5,10 +5,16 @@ import { createInitialState, currentProject } from "../src/app/state";
 import { createDemoProject } from "../src/demo/demoProject";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
 import { discoverProjectRecoveryNative, openProjectFileNative } from "../src/native/fileBridge";
+import { loadAudioMediaNative } from "../src/native/mediaBridge";
+import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
+import { clearAudioBufferCache, getCachedAudioBuffer } from "../src/audio/audioBufferCache";
 
 vi.mock("../src/native/fileBridge", async (original) => ({
   ...await original<typeof import("../src/native/fileBridge")>(),
   openProjectFileNative: vi.fn(), discoverProjectRecoveryNative: vi.fn()
+}));
+vi.mock("../src/native/mediaBridge", async (original) => ({
+  ...await original<typeof import("../src/native/mediaBridge")>(), loadAudioMediaNative: vi.fn()
 }));
 
 function deferred<T>() {
@@ -45,16 +51,49 @@ function host() {
   return app;
 }
 
+function stoppedHost() {
+  const app = host(), preparing = deferred<void>(), release = deferred<void>();
+  app.samplePreviewTimer = null;
+  app.updateLiveDom = vi.fn();
+  app.nextPaint = vi.fn(async () => {});
+  app.syncVst3RenderBoundaryState = vi.fn();
+  app.startLiveMetronome = vi.fn();
+  app.timelineAudioPreparationState = () => ({ reloadableMissingBufferCount: 0, native: { needsPreparation: true } });
+  app.nativeAudioPreparationMessage = () => "Preparing native audio";
+  Object.assign(app.engine, {
+    isPlaying: () => app.state.playing,
+    canResumePausedNativePlayback: () => false,
+    getNativeRuntimeAudioPreparationState: () => ({ needsPreparation: true }),
+    prepareNativeRuntimeAudioForPlayback: vi.fn(async () => { preparing.resolve(); await release.promise; }),
+    play: vi.fn(async () => { app.state.playing = true; }),
+    stop: vi.fn(() => { app.state.playing = false; }),
+    seekToBar: vi.fn()
+  });
+  return { app, preparing, release };
+}
+
+function addReloadableAudio(app: any) {
+  const imported = addImportedAudioMedia(currentProject(app.state), { name: "owned-fixture.wav", uri: "C:/owned-fixture.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 44100, channels: 1 });
+  app.state.undoStack.present = placeAudioClipOnTimeline(imported.project, imported.item.id, 1).project;
+  const samples = new Float32Array([0, 0.1, -0.1, 0]);
+  app.decodeAudioSource = vi.fn(async () => ({ buffer: { duration: 1, numberOfChannels: 1, sampleRate: 44100, length: samples.length, getChannelData: () => samples }, durationSeconds: 1, sampleRate: 44100, channels: 1, waveformPeaks: [0.1] }));
+  return imported.item.id;
+}
+function audioSource() {
+  return { name: "owned-fixture.wav", uri: "C:/owned-fixture.wav", mimeType: "audio/wav", mode: "native" as const, sizeBytes: 16, bytes: new TextEncoder().encode("RIFF1234WAVEdata").buffer };
+}
+
 describe("actual App project-open/MIDI ownership", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAudioBufferCache();
     vi.stubGlobal("window", { confirm: vi.fn(() => false) });
     const memory = new Map<string, string>();
     vi.stubGlobal("localStorage", { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value) });
     vi.mocked(discoverProjectRecoveryNative).mockResolvedValue(null);
     vi.mocked(openProjectFileNative).mockResolvedValue(selection());
   });
-  afterEach(() => { vi.unstubAllGlobals(); });
+  afterEach(() => { clearAudioBufferCache(); vi.unstubAllGlobals(); });
 
   it("does not open a project while real MIDI startup awaits device access", async () => {
     const pending = deferred<unknown>(), device = input();
@@ -211,5 +250,104 @@ describe("actual App project-open/MIDI ownership", () => {
     app.resetProjectSessionForProjectLoad(nextProject(), { status: "Keep replacement" });
     picker.reject(new Error("old picker read error")); await opening;
     expect(app.state.status).toBe("Keep replacement");
+  });
+
+  it("does not play a replacement project when stopped MIDI startup finishes old native preparation", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const { app, preparing, release } = stoppedHost();
+    const starting = app.startMidiInputRecording(); await preparing.promise;
+    app.resetProjectSessionForProjectLoad(nextProject(), { status: "Keep replacement" });
+    const loaded = currentProject(app.state);
+    release.resolve(); await starting;
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(currentProject(app.state) === loaded).toBe(true);
+    expect(app.state.status).toBe("Keep replacement");
+    expect(device.onmidimessage).toBeNull();
+    expect(app.startLiveMetronome).not.toHaveBeenCalled();
+  });
+
+  it("MIDI Stop cancels held native preparation without later playback or a stuck busy overlay", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const { app, preparing, release } = stoppedHost();
+    const starting = app.startMidiInputRecording(); await preparing.promise;
+    await app.stopMidiInputRecording(); const stoppedStatus = app.state.status, busyAfterStop = app.state.busyMessage;
+    release.resolve(); await starting;
+    expect(busyAfterStop).toBeNull();
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(app.state.status).toBe(stoppedStatus);
+    expect(device.onmidimessage).toBeNull();
+  });
+
+  it("checks ownership after the actual busy-paint await before native preparation dispatch", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const { app, release } = stoppedHost(), painted = deferred<void>(), releasePaint = deferred<void>();
+    app.nextPaint = async () => { painted.resolve(); await releasePaint.promise; };
+    const starting = app.startMidiInputRecording(); await painted.promise;
+    app.resetProjectSessionForProjectLoad(nextProject(), { status: "Keep replacement" });
+    releasePaint.resolve(); release.resolve(); await starting;
+    expect(app.engine.prepareNativeRuntimeAudioForPlayback).not.toHaveBeenCalled();
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.status).toBe("Keep replacement");
+  });
+
+  it("an old cancelled preparation cannot clear a newer preparation's busy state or start it", async () => {
+    const devices = [input("old"), input("new")];
+    vi.stubGlobal("navigator", { requestMIDIAccess: vi.fn().mockResolvedValueOnce(access(devices[0])).mockResolvedValueOnce(access(devices[1])) });
+    const { app, preparing, release } = stoppedHost(), newPreparing = deferred<void>(), releaseNew = deferred<void>();
+    const oldStart = app.startMidiInputRecording(); await preparing.promise;
+    await app.stopMidiInputRecording();
+    app.nativeAudioPreparationMessage = () => "New preparation owns busy state";
+    app.engine.prepareNativeRuntimeAudioForPlayback.mockImplementationOnce(async () => { newPreparing.resolve(); await releaseNew.promise; });
+    const newStart = app.startMidiInputRecording(); await newPreparing.promise;
+    release.resolve(); await oldStart;
+    const oldPlayCalls = app.engine.play.mock.calls.length, newBusy = app.state.busyMessage, currentInput = app.midiInputRecordingRuntime.input;
+    releaseNew.resolve(); await newStart;
+    expect(oldPlayCalls).toBe(0);
+    expect(newBusy).toBe("New preparation owns busy state");
+    expect(currentInput).toBe(devices[1]);
+    expect(app.engine.play).toHaveBeenCalledOnce();
+    expect(app.state.busyMessage).toBeNull();
+  });
+
+  it("still starts stopped MIDI transport after current native preparation completes", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const { app, preparing, release } = stoppedHost();
+    const starting = app.startMidiInputRecording(); await preparing.promise;
+    release.resolve(); await starting;
+    expect(app.engine.play).toHaveBeenCalledOnce();
+    expect(app.state.playing).toBe(true);
+    expect(app.state.midiInputRecording.status).toBe("recording");
+    expect(typeof device.onmidimessage).toBe("function");
+    expect(app.startLiveMetronome).toHaveBeenCalledOnce();
+    expect(app.state.busyMessage).toBeNull();
+  });
+
+  it("keeps startup ownership through the actual hydrator's own metadata repair", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    vi.mocked(loadAudioMediaNative).mockResolvedValue(audioSource());
+    const { app, preparing, release } = stoppedHost(), mediaId = addReloadableAudio(app), before = currentProject(app.state);
+    const starting = app.startMidiInputRecording(); await preparing.promise;
+    expect(currentProject(app.state) === before).toBe(false);
+    expect(getCachedAudioBuffer(mediaId)).not.toBeNull();
+    release.resolve(); await starting;
+    expect(app.engine.play).toHaveBeenCalledOnce();
+    expect(app.state.midiInputRecording.status).toBe("recording");
+    expect(app.midiInputRecordingRuntime.trackId).toBe("old-midi");
+  });
+
+  it("MIDI Stop during actual delayed hydration prevents cache writes and later preparation/play", async () => {
+    const device = input(); vi.stubGlobal("navigator", { requestMIDIAccess: async () => access(device) });
+    const loading = deferred<void>(), source = deferred<ReturnType<typeof audioSource>>();
+    vi.mocked(loadAudioMediaNative).mockImplementation(async () => { loading.resolve(); return await source.promise; });
+    const { app, release } = stoppedHost(), mediaId = addReloadableAudio(app);
+    const starting = app.startMidiInputRecording(); await loading.promise;
+    await app.stopMidiInputRecording(); source.resolve(audioSource()); release.resolve(); await starting;
+    expect(getCachedAudioBuffer(mediaId)).toBeNull();
+    expect(app.engine.prepareNativeRuntimeAudioForPlayback).not.toHaveBeenCalled();
+    expect(app.engine.play).not.toHaveBeenCalled();
+    expect(app.state.playing).toBe(false);
+    expect(app.state.busyMessage).toBeNull();
   });
 });

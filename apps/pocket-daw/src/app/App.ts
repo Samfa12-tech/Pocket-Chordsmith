@@ -450,6 +450,16 @@ interface MidiInputRecordingRuntime {
 const STEP_NOTE_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
 const MAX_PROJECT_IMPORT_BYTES = 25 * 1024 * 1024;
 
+interface TransportBusyOwner {
+  isCurrent(): boolean;
+}
+
+interface TimelineAudioPreparationOptions {
+  isCurrent?: () => boolean;
+  onPreparedProject?: (project: PocketDawProject) => void;
+  onBusyOwner?: (owner: TransportBusyOwner) => void;
+}
+
 export class App {
   private root: HTMLElement;
   private state: AppState;
@@ -483,6 +493,7 @@ export class App {
   private midiInputPunchOutStopRequested = false;
   private midiInputStartToken = 0;
   private midiInputStartPending = false;
+  private transportBusyOwner: TransportBusyOwner | null = null;
   private inputPreviewKey: string | null = null;
   private midiInputRecordingRuntime: MidiInputRecordingRuntime | null = null;
   private aiBridgeUnlisten: (() => void) | null = null;
@@ -4768,7 +4779,9 @@ export class App {
     }
   }
 
-  private async playTransport() {
+  private async playTransport(options: TimelineAudioPreparationOptions = {}) {
+    const isCurrent = options.isCurrent || (() => true);
+    if (!isCurrent()) return;
     if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
     this.samplePreviewTimer = null;
     this.state.previewingSampleLibraryId = null;
@@ -4777,13 +4790,16 @@ export class App {
       return;
     }
 
-    let showedBusy = false;
+    let busyOwner: TransportBusyOwner | null = null;
     let hydration: Awaited<ReturnType<typeof this.hydrateTimelineAudioBuffers>> = { total: 0, loaded: 0, cached: 0, missing: [] };
     try {
-      const prepared = await this.prepareTimelineAudioForPlayback("native playback");
-      showedBusy = prepared.showedBusy;
+      const prepared = await this.prepareTimelineAudioForPlayback("native playback", {
+        ...options, onBusyOwner: (owner) => { busyOwner = owner; }
+      });
+      if (!isCurrent()) return;
       hydration = prepared.hydration;
       await this.engine.play();
+      if (!isCurrent()) return;
       this.syncVst3RenderBoundaryState();
       this.startLiveMetronome(false);
       if (hydration.loaded > 0) {
@@ -4792,7 +4808,8 @@ export class App {
         this.state.status = `Could not load ${hydration.missing.length} audio file${hydration.missing.length === 1 ? "" : "s"}; playback will use available material.`;
       }
     } finally {
-      if (showedBusy) {
+      if (busyOwner && this.transportBusyOwner === busyOwner) {
+        this.transportBusyOwner = null;
         this.state.busyMessage = null;
         this.render({ preserveScroll: true });
       }
@@ -5093,7 +5110,7 @@ export class App {
 
   private async startMidiInputRecording() {
     if (this.midiInputStartPending || this.state.midiInputRecording.status === "recording") return;
-    const project = currentProject(this.state);
+    let project = currentProject(this.state);
     if (this.state.recording.status !== "idle" && this.state.recording.status !== "error") {
       this.setMidiInputRecordingError("Stop audio recording before starting MIDI input recording.");
       return;
@@ -5162,7 +5179,7 @@ export class App {
       this.state.status = this.state.midiInputRecording.message;
       if (shouldStartTransport) {
         this.seekToBar(startBar, true);
-        await this.playTransport();
+        await this.playTransport({ isCurrent: ownsStart, onPreparedProject: (preparedProject) => { project = preparedProject; } });
       }
       if (!ownsStart()) return;
       this.render({ preserveScroll: true });
@@ -5177,6 +5194,10 @@ export class App {
     const wasPending = this.midiInputStartPending;
     this.midiInputStartToken += 1;
     this.midiInputStartPending = false;
+    if (this.transportBusyOwner && !this.transportBusyOwner.isCurrent()) {
+      this.transportBusyOwner = null;
+      this.state.busyMessage = null;
+    }
     const runtime = this.midiInputRecordingRuntime;
     if (!runtime) {
       this.state.midiInputRecording = createMidiInputRecordingUiState();
@@ -5534,28 +5555,39 @@ export class App {
     }
   }
 
-  private async prepareTimelineAudioForPlayback(reason: string): Promise<{
+  private async prepareTimelineAudioForPlayback(reason: string, options: TimelineAudioPreparationOptions = {}): Promise<{
     hydration: { total: number; loaded: number; cached: number; missing: string[] };
     showedBusy: boolean;
   }> {
     let showedBusy = false;
+    const isCurrent = options.isCurrent || (() => true);
+    const assertCurrent = () => { if (!isCurrent()) throw new Error("Audio preparation was cancelled or the project changed. Try again with the current project."); };
+    const showBusy = async (message: string) => {
+      assertCurrent();
+      const owner: TransportBusyOwner = { isCurrent };
+      this.transportBusyOwner = owner;
+      options.onBusyOwner?.(owner);
+      showedBusy = true;
+      await this.showTransportBusy(message);
+      assertCurrent();
+    };
+    assertCurrent();
     const before = this.timelineAudioPreparationState();
     if (before.reloadableMissingBufferCount > 0) {
-      showedBusy = true;
-      await this.showTransportBusy(`Loading ${before.reloadableMissingBufferCount} timeline audio file${before.reloadableMissingBufferCount === 1 ? "" : "s"} for ${reason}...`);
+      await showBusy(`Loading ${before.reloadableMissingBufferCount} timeline audio file${before.reloadableMissingBufferCount === 1 ? "" : "s"} for ${reason}...`);
     } else if (before.native.needsPreparation) {
-      showedBusy = true;
-      await this.showTransportBusy(this.nativeAudioPreparationMessage(before.native));
+      await showBusy(this.nativeAudioPreparationMessage(before.native));
     }
 
-    const hydration = await this.hydrateTimelineAudioBuffers();
+    const hydration = await this.hydrateTimelineAudioBuffers(options);
+    assertCurrent();
     const after = this.engine.getNativeRuntimeAudioPreparationState();
     if (after.needsPreparation && (before.reloadableMissingBufferCount > 0 || !showedBusy)) {
-      showedBusy = true;
-      await this.showTransportBusy(this.nativeAudioPreparationMessage(after));
+      await showBusy(this.nativeAudioPreparationMessage(after));
     }
     if (after.needsPreparation) {
       await this.engine.prepareNativeRuntimeAudioForPlayback(reason);
+      assertCurrent();
     }
 
     return { hydration, showedBusy };
@@ -7847,6 +7879,7 @@ export class App {
   }
 
   private cancelNativeInputForProjectReset() {
+    this.transportBusyOwner = null;
     this.midiInputStartToken += 1;
     this.midiInputStartPending = false;
     if (this.midiInputRecordingRuntime) this.midiInputRecordingRuntime.input.onmidimessage = null;
