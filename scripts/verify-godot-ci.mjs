@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import { assertGodotProcessSucceeded } from "./godot-run-result.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const godotBin = argument("--godot-bin");
@@ -78,8 +79,7 @@ function run(args) {
   const result = spawnSync(godotBin, args, { cwd: workspace, encoding: "utf8", timeout: 180_000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Godot ${args.join(" ")} failed with status ${result.status}`);
+  assertGodotProcessSucceeded(result, `Godot ${args.join(" ")}`);
 }
 
 function argument(name) {

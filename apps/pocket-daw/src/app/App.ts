@@ -657,7 +657,7 @@ export class App {
       this.state.sampleLibraryMessage = error instanceof Error ? `Sound Library could not load: ${error.message}` : "Sound Library could not load.";
     } finally {
       this.state.sampleLibraryLoading = false;
-      this.render({ preserveScroll: true });
+      this.renderDiscoveryUpdate();
     }
   }
 
@@ -671,6 +671,14 @@ export class App {
     } catch (error) {
       this.state.sampleLibraryMessage = error instanceof Error ? `VST3 registry unavailable: ${error.message}` : "VST3 registry unavailable.";
     }
+    this.renderDiscoveryUpdate();
+  }
+
+  private renderDiscoveryUpdate() {
+    // Background readiness never changes the export controls. Keep their live
+    // DOM (and uncommitted fields) until an intentional surface change renders
+    // the latest discovery state. An open Add Track picker still refreshes now.
+    if (!this.state.showAddTrack && (this.state.lowerDockTab === "export-details" || this.state.showFilePanel)) return;
     this.render({ preserveScroll: true });
   }
 

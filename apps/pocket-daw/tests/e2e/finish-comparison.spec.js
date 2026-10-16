@@ -11,7 +11,7 @@ import { analyseAudioChannels } from "../../../../packages/pocket-audio-core/src
 
 test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
-async function fixture(page, pending = false, { cold = false, holdCold = false, downloadAudio = false, holdDelivery = false } = {}) {
+async function fixture(page, pending = false, { cold = false, holdCold = false, downloadAudio = false, holdDelivery = false, holdDiscovery = false } = {}) {
   let savedProject = null;
   if (cold) {
     const imported = addImportedAudioMedia(createDemoProject(), { name: "Saved guitar.wav", uri: "C:\\fixture\\saved-guitar.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 48000, channels: 1, sizeBytes: 96044, metadata: { mediaRefKind: "external" } });
@@ -21,13 +21,22 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
   }
   // Command/control fixture with generated PCM. This is never evidence of
   // installed native DSP, physical output or human listening.
-  await page.addInitScript(({ pending, savedProject, holdCold, downloadAudio, holdDelivery }) => {
+  await page.addInitScript(({ pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery }) => {
     let next = 0;
     const files = new Map();
     window.__finishCalls = [];
     window.__finishRenderInputs = [];
     window.__coldHydrationReads = 0;
     window.__coldOpenCount = 0;
+    window.__discoveryReplies = [];
+    window.__discoveryRenderStacks = [];
+    if (holdDiscovery) {
+      const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+      Object.defineProperty(Element.prototype, "innerHTML", { ...html, set(value) {
+        if (this.id === "app" && window.__observeDiscovery) window.__discoveryRenderStacks.push(new Error().stack);
+        html.set.call(this, value);
+      }});
+    }
     if (holdDelivery) {
       const ActualWorker = window.Worker;
       window.Worker = class extends ActualWorker {
@@ -46,6 +55,7 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
       transformCallback(callback) { const id = ++next; window[`_${id}`] = callback; return id; }, unregisterCallback(id) { delete window[`_${id}`]; },
       async invoke(command, args = {}) {
         window.__finishCalls.push([command, args]);
+        if (holdDiscovery && ["sample_library_starter_sounds", "vst3_beta_status"].includes(command)) return new Promise(resolve => window.__discoveryReplies.push(() => resolve(null)));
         if (command === "open_project_file" && savedProject) { window.__coldOpenCount++; return { contents: savedProject, path: "C:\\fixture\\cold-saved.pocketdaw", label: "cold-saved.pocketdaw" }; }
         if (command === "read_audio_media_file" && savedProject) {
           window.__coldHydrationReads++;
@@ -100,8 +110,53 @@ async function fixture(page, pending = false, { cold = false, holdCold = false, 
         return null;
       }
     };
-  }, { pending, savedProject, holdCold, downloadAudio, holdDelivery });
+  }, { pending, savedProject, holdCold, downloadAudio, holdDelivery, holdDiscovery });
 }
+
+async function releaseDiscovery(page) {
+  await page.evaluate(async () => {
+    window.__observeDiscovery = true;
+    window.__discoveryReplies.forEach(reply => reply());
+    // Let both released startup promises and the subsequent save settle.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+}
+
+test("late startup discovery cannot replace an unfinished export field or completed QC", async ({ page }, testInfo) => {
+  await fixture(page, false, { downloadAudio: true, holdDelivery: true, holdDiscovery: true }); await openFinish(page);
+  await page.waitForFunction(() => window.__discoveryReplies.length === 2);
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click();
+  await page.waitForFunction(() => !!window.__releaseDelivery);
+  await page.evaluate(() => {
+    window.__qcInput = document.querySelector('[data-export-profile-setting="full-song-wav:tailSeconds"]');
+    window.__qcInput.value = "0.25"; window.__qcInput.focus();
+    window.__qcRenderCount = document.querySelector("#app").dataset.renderCount;
+  });
+  await releaseDiscovery(page);
+  const result = await page.evaluate(() => ({ connected: window.__qcInput.isConnected, focused: document.activeElement === window.__qcInput, value: window.__qcInput.value,
+    rendersBefore: window.__qcRenderCount, rendersAfter: document.querySelector("#app").dataset.renderCount, stacks: window.__discoveryRenderStacks }));
+  await testInfo.attach("late-startup-render.json", { body: JSON.stringify(result, null, 2), contentType: "application/json" });
+  expect(result.connected && result.focused && result.value === "0.25" && result.rendersBefore === result.rendersAfter).toBe(true);
+  await page.evaluate(() => window.__releaseDelivery());
+  await expect(page.locator('[data-delivery-qc-host="dock"]')).toContainText("Check complete");
+  expect(await page.evaluate(() => window.__qcInput.isConnected && document.activeElement === window.__qcInput && window.__qcInput.value === "0.25")).toBe(true);
+});
+
+test("late startup discovery cannot replace ready Finish controls during reachability actions", async ({ page }, testInfo) => {
+  await fixture(page, false, { holdDiscovery: true }); await openFinish(page);
+  await page.waitForFunction(() => window.__discoveryReplies.length === 2);
+  await page.locator('[data-action="finish-prepare"]').click();
+  await expect(page.locator(".finish-comparison [role=status]")).toContainText("Ready.", { timeout: 20000 });
+  await page.evaluate(() => { window.__finishControl = document.querySelector('[data-finish-focus="b"]'); window.__qcRenderCount = document.querySelector("#app").dataset.renderCount; });
+  await releaseDiscovery(page);
+  const result = await page.evaluate(() => ({ connected: window.__finishControl.isConnected, same: window.__finishControl === document.querySelector('[data-finish-focus="b"]'),
+    rendersBefore: window.__qcRenderCount, rendersAfter: document.querySelector("#app").dataset.renderCount, stacks: window.__discoveryRenderStacks }));
+  await testInfo.attach("late-startup-render.json", { body: JSON.stringify(result, null, 2), contentType: "application/json" });
+  expect(result.connected && result.same && result.rendersBefore === result.rendersAfter).toBe(true);
+  await page.locator('[data-finish-focus="b"]').scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-finish-focus="b"]')).toBeInViewport();
+});
 
 async function openFinish(page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });

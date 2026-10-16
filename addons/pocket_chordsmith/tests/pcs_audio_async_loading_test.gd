@@ -3,6 +3,24 @@ extends SceneTree
 const Conductor = preload("res://addons/pocket_chordsmith/runtime/pocket_chordsmith_conductor.gd")
 const Profile = preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const LoadJob = preload("res://addons/pocket_chordsmith/runtime/pcs_audio_asset_load_job.gd")
+
+class DelayedLoadJob:
+	extends LoadJob
+	signal request_started
+	var completion_released := false
+	func _ready() -> void:
+		super._ready()
+		request_started.emit()
+	func _process(delta: float) -> void:
+		if completion_released:
+			super._process(delta)
+
+class PreparedConductor:
+	extends Conductor
+	func _create_audio_asset_load_job(path: String) -> Node:
+		var job := DelayedLoadJob.new()
+		job.asset_path = path
+		return job
 var failures: Array[String] = []
 var cancellation := ""
 var subject
@@ -61,7 +79,7 @@ func _run() -> void:
 		_check(weak_subject.get_ref() == null, "Conductor must release after cancelled preparation: %s" % mode)
 		var jobs := 0
 		for child in root.get_children():
-			if child.get_script() == LoadJob:
+			if child is LoadJob:
 				jobs += 1
 		_check(jobs == 0, "Owned threaded job must drain and release after cancellation: %s" % mode)
 	subject = _music(path)
@@ -73,7 +91,7 @@ func _run() -> void:
 	_check(abandoned.get_ref() == null, "Freeing a conductor during resource loading must release the conductor.")
 	var remaining_jobs := 0
 	for child in root.get_children():
-		if child.get_script() == LoadJob:
+		if child is LoadJob:
 			remaining_jobs += 1
 	_check(remaining_jobs == 0, "An abandoned conductor's resource request must still drain and release its job.")
 	var bad = _music("res://pcs-missing-audio-fixture.wav")
@@ -84,11 +102,11 @@ func _run() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	for failure in failures:
 		push_error(failure)
-	print(JSON.stringify({"test": "audio-async-loading", "engine": Engine.get_version_info().get("string", ""), "checks": 19, "requested_jobs": requested_jobs, "cold": report, "warm": warm, "arrangement": arrangement, "failures": failures}))
+	print(JSON.stringify({"test": "audio-async-loading", "engine": Engine.get_version_info().get("string", ""), "checks": 22, "requested_jobs": requested_jobs, "cold": report, "warm": warm, "arrangement": arrangement, "failures": failures}))
 	quit(0 if failures.is_empty() else 1)
 
 func _music(path: String):
-	var music := Conductor.new()
+	var music := PreparedConductor.new()
 	var profile := Profile.new()
 	profile.sample_preview_prewarm_on_ready = false
 	profile.preserve_prepared_wav_endings = true
@@ -98,28 +116,36 @@ func _music(path: String):
 	return music
 
 func _job_started(child: Node) -> void:
-	if child.get_script() != LoadJob:
+	if not child is DelayedLoadJob:
 		return
+	child.request_started.connect(_request_started.bind(child, subject), CONNECT_ONE_SHOT)
+
+func _request_started(job, music) -> void:
 	requested_jobs += 1
 	match cancellation:
-		"explicit": subject.cancel_audio_prewarm()
-		"profile": subject.set_playback_profile(Profile.new())
-		"in-place": subject.playback_profile.loop_prepared_sections = true
+		"explicit": music.cancel_audio_prewarm()
+		"profile": music.set_playback_profile(Profile.new())
+		"in-place": music.playback_profile.loop_prepared_sections = true
 		"exit":
-			child.set_process(false)
-			_detach_subject.call_deferred(child)
+			_detach_subject.call_deferred(job, music)
+			return
 		"free":
-			child.set_process(false)
-			_free_subject.call_deferred(child)
+			_free_subject.call_deferred(job, music)
+			return
+	job.completion_released = true
 
-func _detach_subject(job: Node) -> void:
-	root.remove_child(subject)
-	job.set_process(true)
+func _detach_subject(job, music) -> void:
+	_check(not job.completion_released, "Exit lifecycle must run while completion is deterministically held.")
+	root.remove_child(music)
+	job.completion_released = true
 
-func _free_subject(job: Node) -> void:
-	subject.queue_free()
+func _free_subject(job, music) -> void:
+	_check(not job.completion_released, "Free lifecycle must begin while completion is deterministically held.")
+	var weak_music := weakref(music)
+	music.queue_free()
 	await process_frame
-	job.set_process(true)
+	_check(weak_music.get_ref() == null and is_instance_valid(job) and not job.completion_released, "The loading consumer must be freed before its held job completes.")
+	job.completion_released = true
 
 func _check(condition: bool, message: String) -> void:
 	if not condition:
@@ -133,7 +159,7 @@ func _wait_for_jobs() -> void:
 		await create_timer(0.005).timeout
 		var jobs := 0
 		for child in root.get_children():
-			if child.get_script() == LoadJob:
+			if child is LoadJob:
 				jobs += 1
 		if jobs == 0:
 			return

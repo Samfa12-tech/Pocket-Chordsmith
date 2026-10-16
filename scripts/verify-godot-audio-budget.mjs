@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync }
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { assertGodotProcessSucceeded } from "./godot-run-result.mjs";
 import { decodePcmWavBytes, encodePcm16WavBytes } from "../packages/pocket-audio-core/src/export/wav.js";
 
 const root = resolve(import.meta.dirname, "..");
@@ -64,5 +65,5 @@ function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); 
 function run(args, log) {
   const result = spawnSync(godot, ["--path", workspace, ...args], { encoding: "utf8", timeout: 180000, maxBuffer: 8 * 1024 * 1024 });
   writeFileSync(resolve(workspace, log), `${result.stdout || ""}\n${result.stderr || ""}`);
-  if (result.error || result.status !== 0) throw new Error(`${log}: ${result.error || result.status}; evidence retained in ${workspace}`);
+  assertGodotProcessSucceeded(result, `${log}; evidence retained in ${workspace}`);
 }

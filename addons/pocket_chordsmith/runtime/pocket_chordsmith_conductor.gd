@@ -623,8 +623,7 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 			var path := str(value)
 			var key := _prepared_stem_cache_key(path) if profile.preserve_prepared_wav_endings or profile.loop_prepared_sections else _audio_cache_key(path)
 			if path.begins_with("res://") and not seen.has(key) and not _audio_stream_cache.has(key) and not _audio_stream_cache.has(_audio_cache_key(path)) and ResourceLoader.exists(path):
-				var job := AudioAssetLoadJob.new()
-				job.asset_path = path
+				var job = _create_audio_asset_load_job(path)
 				get_tree().root.add_child(job)
 				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 					job.detach_consumer()
@@ -658,6 +657,12 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 func cancel_audio_prewarm() -> void:
 	_audio_prepare_generation += 1
 	_detach_audio_load_consumers()
+
+
+func _create_audio_asset_load_job(path: String) -> Node:
+	var job := AudioAssetLoadJob.new()
+	job.asset_path = path
+	return job
 
 
 func _detach_audio_load_consumers() -> void:

@@ -94,7 +94,7 @@ human listening evidence. No installed DAW or physical-device pass is claimed.
 
 ## Regression and remaining gates
 
-Nineteen deterministic loading checks cover cold/deduplicated and warm PCM,
+The corrected 22 deterministic loading checks cover cold/deduplicated and warm PCM,
 global native arrangement preparation, no autoplay, explicit/profile/in-place
 cancellation, exit/free, eventual owned-job cleanup and missing assets. Verbose
 teardown completed without leaked objects/resources after the coroutine fix.
@@ -106,3 +106,27 @@ and transition/dropout evidence, rendered frame stalls, human level-matched
 listening and final release payloads. Runtime testing is on 4.6.3; public 4.4
 compatibility advertising still needs reconciliation before publication.
 No addon version, licence, publication, account or credential changes here.
+
+### Review correction to PR106
+
+The hosted Godot job for head `844370fb1afcf338186f129a7b55dbf075120534`
+printed a previously-freed-instance script exception at the old lifecycle test's
+`_free_subject`, then reported `failures: []` / 19 checks / exit 0. That run is
+**not a clean Godot 19/19 pass**. Disabling processing on `child_entered_tree`
+did not deterministically hold completion through `_ready` and fast loading.
+
+The follow-up uses a test conductor factory with a delayed-completion load job.
+Its real resource request starts normally, but completion stays explicitly held
+while the consumer is detached or freed. Assertions prove the consumer is gone
+and the owned job is still pending before releasing completion, then check
+eventual cleanup. It does not claim cancellation coverage from a validity guard.
+The default production factory returns the same existing load job.
+
+`verify-godot-ci.mjs` and the measurement runner now reject unexpected script
+exceptions or leaked objects/resources even when Godot exits zero. Six Node
+regressions include the exact hosted exception plus its misleading green summary;
+replaying the retained hosted output through the guard also rejects it. Ordinary
+warnings remain distinct from unexpected runtime errors. Local corrected loading
+checks and the fail-closed full Godot gate passed; exact follow-up hosted/source
+review remains pending. Prior float-conversion and failed performance-budget
+evidence remains scoped to its retained source/captures and is not upgraded.

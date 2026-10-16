@@ -9,10 +9,10 @@ means published or physically heard unless explicitly evidenced there.
 | Reliability audit | Bounded cache, playback, timing, mixer and UI fixes in prior reviewed slices | Long-session/working-set budgets; retain hypotheses where runtime evidence is absent |
 | Campfire family | Original shared implementation, voicings/seed/rate/gain/tail/cache identity and legacy source tests | Real vocal/live/listening acceptance and documented live fallback limits |
 | Chordsmith/DJ | Selected theme work and shared runtime; existing desktop/touch/browser evidence | Remaining BeatStitch/contextual Hear, optional examples, feedback, A/B and phone controls |
-| DAW Hear/Finish | PR101 foundation, PR103 incremental source and PR104 hydration correction accepted; PR102 workflow retained | Installed/native/device/listening acceptance remains separate |
+| DAW Hear/Finish | PR101/103/104/105 source accepted; cold hydration fixed; delayed-discovery correction passes local full browser51 and DAW1235 | Follow-up exact hosted/source review; installed/native/device/listening remains separate |
 | Cold saved audio | PR104 returns the installed clone; six new regressions pass locally and hosted; source hold cleared | Final installed cold/reopen acceptance |
 | Meter/delivery | PR100 calibration; PR103 native monitor/seven WAV references; final-file QC presentation, cancellation/report/unfinished-input checks implemented locally | New QC candidate source/hosted review; exact installed output checks |
-| Godot | Core/Chordsmith/native arranged routes; bounded float32→PCM16 compatibility captures; worker loading and synthetic SFX/cold-warm/residency measurements | New loading candidate review; rendered frame stalls, full-game/long-session/peak working-set/listening; reconcile advertised 4.4 vs tested 4.6.3 |
+| Godot | Core/Chordsmith/native routes; bounded float32→PCM16 captures; worker loading; corrected controlled-completion22 and fail-closed full gate pass locally | PR106 nominal green job invalid; follow-up hosted/source review; full-game/rendered/listening/version gates remain |
 | DAW safeguards | Existing save/Undo/media/plugin foundations retained; menu/focus/overflow fixes | Remaining dense-session, popover/shortcut and actual Windows scaling acceptance |
 | Installed acceptance | No new installer built; source/PCM/UI evidence kept separate | One exact final installed candidate, retained real exports, device/loopMIDI/output/listening checks |
 | Release truth | Draft candidates and evidence ledger; Core stays private/workspace-only | Versions/family manifest/current advisory applicability; reviewed candidates before public targets |
@@ -34,6 +34,20 @@ DAW1235, browser47passed/2long-worker skipped. Its decoder/QC is not general WAV
 file certification. Installed/device/listening acceptance remains separate.
 Godot loading/compatibility details and explicit failed/open performance budgets:
 addons/pocket_chordsmith/docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md.
+
+PR106 head844370fb1afcf338186f129a7b55dbf075120534 is held: hosted CI38825154382
+browser45passed/2failed/2skipped; its Godot job exited0 despite a script exception,
+so it is not a clean19-check pass. CodeQL38825154407 passed both languages.
+The follow-up reproduces both DAW failures via delayed startup discovery (actual
+full-shell render stacks captured), preserves active Export/File controls, and
+adds controlled Godot completion holds plus rejection of unexpected script errors.
+Local follow-up: full DAW1235, browser51 (including2longworkers), Godot22 plus
+fullgate142addonentries, root-tooling26 (6newgatechecks), typecheck/build and
+repo/security/governance/pins/manifest passed. Core/Rust/physical/installed were
+not rerun for this correction. Exact follow-up hosted/source review is pending.
+Chordsmith contextual audition WIP is safely stashed at
+b62bcdcf4b5de65201187a80eab167ad635f28e0 (16 local desktop/touch checks passed;
+unit runner temp-path failure is not a pass). Resume after integrating correction.
 
 The capture fingerprint is unchanged; the source-level microphone omission is
 documented as omitted, not passed. If later shared/capture impact requires a
