@@ -17,6 +17,8 @@ func _run() -> void:
 	for intent in ["ordinary-loop","state","section","sequence"]:
 		await _check_loop_intent(intent)
 	await _check_queued_arrangement_boundary()
+	await _check_long_frame_boundary()
+	await _check_seek_near_end_boundary()
 	await _check_stop_during_tail()
 	for failure in failures:
 		push_error(failure)
@@ -132,6 +134,50 @@ func _check_queued_arrangement_boundary() -> void:
 	music.queue_section("A",Conductor.TransitionBoundary.NEXT_LOOP)
 	await create_timer(1.1).timeout
 	_check(music.is_playing() and music.current_section=="A","NEXT_LOOP queue must apply at the whole-arrangement boundary")
+	await _cleanup(music)
+
+func _two_section_music() -> Node:
+	var music := _music(false,false,2.5)
+	music.chart.arrangement.assign(["A","B"])
+	music.chart.arrangement_positions.assign([
+		{"id":"A","arrangement_index":0,"start_tick":0,"length_ticks":1920,"bars":1},
+		{"id":"B","arrangement_index":1,"start_tick":1920,"length_ticks":1920,"bars":1},
+	])
+	return music
+
+func _check_long_frame_boundary() -> void:
+	var music := _two_section_music()
+	await music.prewarm_arrangement_async()
+	music.play()
+	music.queue_section("A",Conductor.TransitionBoundary.NEXT_LOOP)
+	_check(music._boundary_reached(1728,4032,Conductor.TransitionBoundary.NEXT_LOOP),"long step across the final section must cross the absolute arrangement boundary")
+	await create_timer(0.9).timeout
+	var before_tick: int=music.current_tick
+	_check(music.current_section=="A" and before_tick<1920,"long-frame precondition must still be in the first section")
+	# Keep conductor processing enabled. The audio thread runs while one actual
+	# gameplay frame is delayed across both the final section and chart ending.
+	OS.delay_msec(1200)
+	await create_timer(0.06).timeout
+	var pending: Dictionary=music.get("_queued_transition")
+	_check(pending.is_empty() and music.is_playing() and music.current_section=="A","NEXT_LOOP queued before a long frame must apply instead of stranding through EOF")
+	measurements.append({"mode":"active-wall-clock-long-frame","before_tick":before_tick,"after_tick":music.current_tick,"pending":not pending.is_empty(),"section":music.current_section,"playing":music.is_playing()})
+	await _cleanup(music)
+
+func _check_seek_near_end_boundary() -> void:
+	var music := _two_section_music()
+	await music.prewarm_arrangement_async()
+	music.play()
+	await create_timer(0.05).timeout
+	music.seek_tick(3500,false)
+	music.queue_section("A",Conductor.TransitionBoundary.NEXT_LOOP)
+	_check(music._boundary_reached(3500,4032,Conductor.TransitionBoundary.NEXT_LOOP),"seek near the ending must not depend on an old sequence cursor")
+	# The first post-seek frame must itself cross the ending; ordinary short
+	# frames can otherwise repair the stale cursor before testing NEXT_LOOP.
+	OS.delay_msec(400)
+	await create_timer(0.06).timeout
+	var pending: Dictionary=music.get("_queued_transition")
+	_check(pending.is_empty() and music.is_playing() and music.current_section=="A","NEXT_LOOP after an ordinary near-end seek must apply at the absolute ending")
+	measurements.append({"mode":"active-near-end-seek-delayed-frame","after_tick":music.current_tick,"pending":not pending.is_empty(),"section":music.current_section,"playing":music.is_playing()})
 	await _cleanup(music)
 
 func _check_stop_during_tail() -> void:

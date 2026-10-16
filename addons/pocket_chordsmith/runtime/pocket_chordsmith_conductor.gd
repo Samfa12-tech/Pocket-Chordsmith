@@ -1444,6 +1444,11 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 			var end_tick := int(section_info.get("start_tick", 0)) + int(section_info.get("length_ticks", 0))
 			return previous_tick < end_tick and next_tick >= end_tick
 		TransitionBoundary.NEXT_LOOP:
+			if _uses_whole_prepared_arrangement() and not _has_native_timeline():
+				# A long frame or first post-seek frame can cross the final section
+				# before its sequence cursor advances. Use the absolute song end.
+				var arrangement_end: int = chart.get_length_ticks()
+				return arrangement_end > 0 and previous_tick < arrangement_end and next_tick >= arrangement_end
 			if current_sequence.is_empty():
 				return _boundary_reached(previous_tick, next_tick, TransitionBoundary.NEXT_SECTION)
 			var section_info: Dictionary = chart.find_section_at_tick(previous_tick)

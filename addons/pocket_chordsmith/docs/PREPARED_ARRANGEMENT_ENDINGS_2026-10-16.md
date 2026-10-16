@@ -40,3 +40,15 @@ intermittent clock failures, establish production-game/device/listening parity,
 or authorize a release/replacement package. Review and release evidence remain
 separate. Bulky runtime evidence stays local; no workflow retention or spending
 settings are changed by this patch.
+
+## Boundary follow-up after independent review
+
+A delayed gameplay frame can cross both the final section and the arrangement
+ending before the sequence cursor is updated. The same stale cursor can occur
+on the first delayed frame after a near-end seek. Ordinary prepared arrangements
+now detect `NEXT_LOOP` from the absolute chart ending, independently of that
+cursor. Native timelines and explicit adaptive sequences keep their predicates.
+Additional checks cover the exact 1728-to-4032 tick crossing, an active 1200 ms
+gameplay stall, and a seek to tick 3500 followed by a delayed first frame. The
+conductor stays enabled; these deliberate stalls are correctness tests, not
+performance measurements.
