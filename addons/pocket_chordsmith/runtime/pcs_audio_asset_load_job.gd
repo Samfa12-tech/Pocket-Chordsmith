@@ -1,32 +1,64 @@
 @tool
 extends Node
-## A short-lived loading-scene job owns and drains one threaded resource request.
+## A short-lived loading-scene job owns and drains one background resource read.
 ## It lives under the scene root so freeing a conductor cannot abandon the job.
+
+class AudioReader:
+	extends RefCounted
+	var path := ""
+	var result: AudioStream
+	func read_stream() -> void:
+		result = ResourceLoader.load(path, "AudioStream") as AudioStream
 
 signal completed(stream: AudioStream)
 
 var asset_path := ""
 var _request_error := OK
 var _consumer_completed := false
+var _task_id := -1
+var _reader: AudioReader
+var _exiting := false
 
 func _ready() -> void:
-	_request_error = ResourceLoader.load_threaded_request(asset_path, "AudioStream", false)
+	_reader = _create_reader()
+	_reader.path = asset_path
+	_task_id = WorkerThreadPool.add_task(_reader.read_stream, false, "Pocket audio resource read")
+	_request_error = FAILED if _task_id < 0 else OK
+
+func _create_reader() -> AudioReader:
+	return AudioReader.new()
 
 func _process(_delta: float) -> void:
 	if _request_error != OK:
 		_finish(null)
 		return
-	var status := ResourceLoader.load_threaded_get_status(asset_path)
-	if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+	if is_worker_active():
 		return
-	# Never call get before completion: that would block the gameplay thread.
+	# Join only a completed read during normal processing. The worker is a
+	# RefCounted reader, never a scene node or a reference to the consumer.
+	_finish(_drain_worker())
+
+func _drain_worker() -> AudioStream:
 	var stream: AudioStream = null
-	if status == ResourceLoader.THREAD_LOAD_LOADED:
-		stream = ResourceLoader.load_threaded_get(asset_path) as AudioStream
-	elif status == ResourceLoader.THREAD_LOAD_FAILED:
-		# Consume the failed request as well; no result is promoted into a cache.
-		ResourceLoader.load_threaded_get(asset_path)
-	_finish(stream)
+	if _task_id >= 0:
+		if WorkerThreadPool.wait_for_task_completion(_task_id) == OK:
+			stream = _reader.result
+	_task_id = -1
+	_reader = null
+	return stream
+
+func _exit_tree() -> void:
+	_exiting = true
+	detach_consumer()
+	# Root-owned jobs survive consumer/scene removal. If the job itself exits
+	# (including whole-tree shutdown), finish its owned task before release.
+	_drain_worker()
+
+func was_detached() -> bool:
+	return _exiting
+
+func is_worker_active() -> bool:
+	return _task_id >= 0 and not WorkerThreadPool.is_task_completed(_task_id)
 
 func _finish(stream: AudioStream) -> void:
 	set_process(false)

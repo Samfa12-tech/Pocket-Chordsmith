@@ -1731,3 +1731,31 @@ See runtime acceptance and docs/FAMILY_RELEASE_CANDIDATES_2026-10-16.md for exac
 scope, candidate/public truth and remaining gates. No public upload or exact
 installed candidate pass is claimed by these source checks. Website work must
 preserve b2469ac41f721074868b89d1fbab9ccfea56e34f from fresh website main.
+
+
+## Owned pooled Godot loading follow-up (source review only)
+
+The isolated follow-up replaces public threaded-request tokens with an owned
+RefCounted reader on Godot's bounded WorkerThreadPool. Normal cancellation/free
+resolves immediately while the root job drains; actual job/tree destruction joins
+its task. The conductor rejects a detached result before cache promotion or a
+second asset. Clocks, gains, recipes, source IDs and cache-epoch rules are unchanged.
+The measurement tool separately stops/releases synthetic SFX before shutdown.
+
+Executed validation: full Godot gate; 157 lifecycle checks including 128 exact-PCM
+loads, eight concurrent cold assets and same-path identity; live-worker Stop/free/
+job removal; shutdown during active I/O; existing 23 async and 82 audition checks;
+and 12 further clean 82-assertion audition runs. Rendered WASAPI PCM comparisons
+cover both native full-mix player routes with 216,000/216,000 frames each,
+maximum error 1.647e-6/RMS 2.930e-7, silence mutants rejected and zero capture drops.
+
+Performance remains failed/open: final pooled synthetic cold preparation of
+20.081 ms exceeds 16.667 ms. Warm Play of 0.454 ms and 92,164,224 logical PCM bytes
+pass only their fixture bounds. No full-game, peak process-memory or general
+dropout claim. The rendered fixture retains 28 pre-existing Unicode NUL warnings.
+Prior failed ObjectDB runs remain retained; no guard or failure is reclassified.
+
+Implemented/tested source awaits independent review. Existing Godot 1.3 ZIPs and
+the frozen DAW 0.6.51 installer are unchanged; no replacement release candidate,
+installation, publication or listing submission occurs in this source follow-up.
+See addons/pocket_chordsmith/docs/OWNED_RESOURCE_LOADING_2026-10-16.md.

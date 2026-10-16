@@ -644,7 +644,7 @@ func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dic
 				var stream: AudioStream = await job.completed
 				_pending_audio_load_jobs.erase(job)
 				report.max_thread_wait_us = maxi(report.max_thread_wait_us, Time.get_ticks_usec() - waiting)
-				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+				if job.was_detached() or generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 					report.cancelled = true
 					report.cached_streams = _audio_stream_cache.size()
 					return report
