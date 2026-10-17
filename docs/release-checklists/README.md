@@ -19,13 +19,13 @@ Use these notes before tagging or publishing any Pocket Audio family artifact.
 - If port `4174` is already occupied, run the Chordsmith Playwright smoke with an alternate port, for example `$env:PORT='4184'; npm run test:e2e`.
 - Verify the Settings export dropdown covers Section A-H plus all sections and song sequence, and that section WAV export uses the matching selected scope.
 - Verify `Push to DJ` and `Push to Godot` still preserve handoff payloads.
-- Run `npm run package:itch` from `apps/chordsmith-web/` and confirm the zip contains `index.html`, `pocket_chordsmith_v68_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
+- Run `npm run package:itch` from `apps/chordsmith-web/` and confirm the zip contains `index.html`, `pocket_chordsmith_v70_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
 
 ## Pocket DJ
 
 - Confirm `apps/pocket-dj/index.html` redirects to the intended current build.
 - Smoke test `PCS1:` import, raw JSON import, demo load, play/stop, section queueing, mutes, build/drop, and edit-back handoff.
-- Run `npm run package:itch` and confirm the zip contains `index.html`, `pocket_dj_v1g_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
+- Run `npm run package:itch` and confirm the zip contains `index.html`, `pocket_dj_v1i_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
 - Keep Pocket DJ as a performance/remix deck, not a second Chordsmith editor.
 
 ## Pocket DAW

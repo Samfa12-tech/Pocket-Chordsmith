@@ -489,15 +489,16 @@ Post-publication checks:
 
 ## Itch Policy
 
-Normal Pocket DAW checkpoints do not push itch. The `windows-installer` channel
-contains the stable downloader/bootstrapper, which reads the latest GitHub
-bootstrapper manifest. Run `PUBLISH=1 npm run itch:push:bootstrapper` only when
-the bootstrapper executable or its upload payload changes. `butler status`
-remaining on an older bootstrapper user-version is therefore expected for a
-normal GitHub updater release.
+As of17 October2026 the existing `windows-installer` channel contains the full
+0.6.59setup/MSI bundle, build2142969/upload17913969. The earlier0.6.40payload was
+also full installers; old bootstrapper wording was an incorrect payload assumption.
+Download/extract the itch ZIP and run setup or MSI; the installed app updates
+through GitHub. Optional bootstrapper tooling/manifests are not the shipped payload.
 
-The old full-installer `itch:push` command is an emergency/manual fallback, not
-the normal checkpoint path.
+Ordinary source/docs checkpoints do not push itch. For a deliberate authorized
+installer release, use only the exact tested frozen files, inspect existing
+channel identity, then verify fresh downloaded payload hashes. Preserve listing
+prose and updater policy. No rebuild/restage is permitted after installed acceptance.
 
 ## Mistakes That Invalidate or Waste a Release Run
 

@@ -87,9 +87,9 @@ Audio features must avoid painful harshness and clipping. Use sensible gain stag
 
 ## 3. Current known architecture facts
 
-These are the important current-v68 facts Codex should assume and verify in the file before editing:
+These are the important current-v70 facts Codex should assume and verify in the file before editing:
 
-- The app title is Pocket Chordsmith v68.
+- The app title is Pocket Chordsmith v70; verify source constants before editing.
 - `PROJECT_SCHEMA_VERSION` is currently 17. Schema 16 remains the supported legacy import/projection boundary.
 - `SECTION_IDS` currently supports `["A","B","C","D","E","F","G","H"]`.
 - `MAX_MELODY_TRACKS` is currently 6.

@@ -15,9 +15,9 @@ Pocket DAW is not:
 - Pocket DJ
 
 Current public status: **free Windows alpha testing, public updater and exact
-installed-smoke version 0.6.46**. Current source is the 0.6.49 native-audio
-and validation release candidate; 0.6.48 was prepared but failed exact-installed
-Godot pack validation and was not published.
+installed-smoke version0.6.59**. Source metadata is0.6.60, an unpublished documentation/status checkpoint. The dated
+[publication record](docs/releases/PUBLISHED_0.6.59_2026-10-17.md) distinguishes
+the exact tested release from later documentation commits and historical failures.
 
 For current source/public/smoke truth, use:
 
@@ -28,12 +28,12 @@ For current source/public/smoke truth, use:
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
 - Updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Itch bootstrapper manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
+- Compatibility manifest for optional bootstrapper tooling (not the current itch payload): `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
 
 ## Install For Alpha Testing
 
 1. Download Pocket DAW from itch.
-2. Run the itch bootstrapper. It downloads the latest setup EXE from GitHub Releases, verifies its SHA-256 hash, and launches the verified installer.
+2. Extract `pocket-daw-windows-installer.zip`, then run the included0.6.59 setup EXE or MSI. The current itch payload contains full installers.
 3. Launch Pocket DAW from the Start Menu or installed shortcut.
 4. Confirm the version/build information in the About/Diagnostics panel.
 5. Future versions should be tested through `Help -> Check for Updates` or the startup auto-check flow.

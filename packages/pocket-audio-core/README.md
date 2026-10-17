@@ -55,7 +55,7 @@ For a fuller parity gate after changing sound features, run `npm run verify:fami
 
 Use `../../docs/POCKET_AUDIO_SOUND_PARITY_MATRIX.md` before describing a change as sound parity. Core has deterministic event/render fixtures and first-pass exports, but exact app-to-app tone parity still needs the matrix's component gates and listening evidence.
 
-Use `../../docs/POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md` before moving Pocket Chordsmith audible live playback or preview sounds behind Core. That gate keeps the current v68 bridge in diagnostic/export mode until event, sound, mobile, listening and rollback evidence all exist.
+Use `../../docs/POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md` before moving Pocket Chordsmith audible live playback or preview sounds behind Core. That historical gate describes the legacy bridge boundary; current v70/Core0.3.0 Campfire prepared playback has separate accepted PCM evidence. Other live-engine extraction still requires event, sound, mobile, listening and rollback evidence.
 
 The shared guitar surface lives in `src/sounds/guitar.js`. It defines Chordsmith-compatible guitar tones, tone curves, registers, strum modes, pattern presets, fill styles, and the DAW step-edit cycle. Pocket DAW imports these definitions for Chordsmith import sanitizing, editor UI options, and WebAudio guitar rendering so `metal` and `western_twang` stay available wherever Chordsmith projects are edited or played.
 
@@ -65,7 +65,7 @@ The shared drum groove preset table lives in `src/patterns/drum-presets.js`. Poc
 
 The shared Chordsmith mix defaults live in `src/constants.js`, and Chordsmith WAV export staging lives in `src/performance/stem-mix.js`. Keep user-facing stem defaults and offline export headroom separate: DAW, DJ, Godot and Core should consume the shared helpers instead of copying stem gain ratios into app code.
 
-`npm run compare:chordsmith-browser-trace` opens the current Chordsmith v68 browser app in Playwright, imports each committed fixture through `window.PocketChordsmithParityTrace.fromProject()`, and checks that Pocket Audio Core reproduces the Chordsmith-normalized event trace. The command also prints raw fixture drift, which is expected while legacy/raw Chordsmith JSON and app import rescaling still differ.
+`npm run compare:chordsmith-browser-trace` opens the current Chordsmith v70 browser app in Playwright, imports each committed fixture through `window.PocketChordsmithParityTrace.fromProject()`, and checks that Pocket Audio Core reproduces the Chordsmith-normalized event trace. The command also prints raw fixture drift, which is expected while legacy/raw Chordsmith JSON and app import rescaling still differ.
 
 `normalisePocketChordsmithProject()` preserves optional lofi metadata without bumping schema `16`: `audioProfile`, `lofiPreset`, `stylePreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone`. Missing fields still normalise to the standard clean profile.
 
