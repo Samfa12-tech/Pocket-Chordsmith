@@ -81,6 +81,14 @@ test("a menu command dialog returns focus to a visible trigger and Tab leaves th
 
 test("background startup status refresh preserves an open scrolled menu and its focus", async ({ page }) => {
   await page.clock.install();
+  await page.addInitScript(() => {
+    const schedule = window.setTimeout.bind(window);
+    window.__startupUpdateCallbacks = 0;
+    window.setTimeout = (callback, delay, ...args) => schedule(delay === 3500 ? (...values) => {
+      window.__startupUpdateCallbacks += 1;
+      callback(...values);
+    } : callback, delay, ...args);
+  });
   await openStudio(page);
   const edit = page.locator("#desktop-menu-edit");
   await edit.focus();
@@ -90,7 +98,8 @@ test("background startup status refresh preserves an open scrolled menu and its 
   await expect(last).toBeFocused();
   const renders = Number(await page.locator("#app").getAttribute("data-render-count"));
   await page.clock.runFor(4000);
-  await expect.poll(async () => Number(await page.locator("#app").getAttribute("data-render-count"))).toBeGreaterThan(renders);
+  await expect.poll(() => page.evaluate(() => window.__startupUpdateCallbacks)).toBe(1);
+  expect(Number(await page.locator("#app").getAttribute("data-render-count"))).toBe(renders);
   await expect(page.locator("#desktop-menu-edit-popup")).toBeVisible();
   await expect(last).toBeFocused();
 });

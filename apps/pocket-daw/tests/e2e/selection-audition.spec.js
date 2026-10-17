@@ -78,6 +78,7 @@ test("Stop cancels pending native start and rejects its later completion", async
   await expect(stop).toBeVisible();
   expect(await page.evaluate(() => window.__auditionPayload.audition.endSeconds)).toBeGreaterThan(0);
   await stop.click();
+  await expect(hear).toBeEnabled();
   await page.evaluate(() => window.__releaseAuditionStart());
   await expect(hear).toBeEnabled();
   await expect(page.locator('[data-transport-toggle="true"]')).toContainText("Play");

@@ -4047,6 +4047,7 @@ export class App {
       this.engine.stop({ retainDecodedAssets: true });
       this.clearCancelledTransportPreparation();
       this.stopLiveMetronome();
+      this.render({ preserveScroll: true });
     }
     if (action === "restart") await this.restartTransport();
     if (action === "midi-panic") this.panicMidiPreview();
