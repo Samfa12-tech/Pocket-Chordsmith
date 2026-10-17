@@ -56,6 +56,15 @@ func _run() -> void:
 		_start(route)
 		if route.music != null:
 			route.selected_streams = route.music._stem_map_for_current_state().size()
+			var synchronized_player: AudioStreamPlayer = route.music.get("_stem_player")
+			var active_layers := 0
+			for player in route.music.get("_stem_layer_players").values():
+				if player.playing:
+					active_layers += 1
+			var sync_playing: bool = is_instance_valid(synchronized_player) and synchronized_player.playing and synchronized_player.stream != null
+			events.append({"kind":"player-ownership","route":route.name,"requested_synchronized":route.synchronized,"profile_synchronized":route.music.playback_profile.use_audio_stream_synchronized,"active_layer_players":active_layers,"synchronized_playing":sync_playing})
+			if route.synchronized != route.music.playback_profile.use_audio_stream_synchronized or (route.synchronized and (not sync_playing or active_layers!=0)) or (not route.synchronized and (sync_playing or active_layers!=route.selected_streams)):
+				failures.append("Requested player ownership not observed: "+route.name)
 	await create_timer(2.0).timeout
 	phase = "known-scheduler-delay-control"
 	var delay_begin := Time.get_ticks_usec()
@@ -127,6 +136,8 @@ func _make_musical_route(route_config: Dictionary) -> Dictionary:
 		root.add_child(player)
 	else:
 		var profile = ResourceLoader.load(route_config.profile_path,"",ResourceLoader.CACHE_MODE_IGNORE)
+		if profile.use_audio_stream_synchronized != route_config.synchronized:
+			failures.append("Saved profile mode mismatch: "+name)
 		profile.sample_preview_enabled = false
 		profile.sample_preview_prewarm_on_ready = false
 		for property in ["master_music_bus","drums_bus","bass_bus","chords_bus","guitar_bus","melody_bus","stingers_bus","fx_bus","music_bus_name"]:

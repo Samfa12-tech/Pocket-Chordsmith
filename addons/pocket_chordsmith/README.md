@@ -10,6 +10,9 @@ release and is not a compatibility claim for this candidate. Runtime performance
 installed/device and listening limits remain in `docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md`.
 The subsequent rendered-scene checkpoint and remaining release holds are recorded
 in [the 17 October runtime ledger](docs/REPRESENTATIVE_RUNTIME_CHECKPOINT_2026-10-17.md).
+The [subsequent corrections](docs/RUNTIME_FOLLOWUP_2026-10-17.md) identify the
+NUL-diagnostic cause and replace duplicated native-mode measurements with observed
+standalone/synchronized ownership evidence; historical performance holds remain.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
