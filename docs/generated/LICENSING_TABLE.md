@@ -10,6 +10,6 @@
 | Pocket DAW | `apps/pocket-daw/` | UNLICENSED | public-alpha-source-ahead-of-public |
 | Pocket Audio Core | `packages/pocket-audio-core/` | UNLICENSED | private-workspace-package |
 | PCS Format | `packages/pcs-format/` | UNLICENSED | private-workspace-package |
-| Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | MIT | public-addon-source-ahead-of-public |
+| Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | MIT | public-addon |
 
 Dependency lockfiles and third-party notices are release inputs and must remain present in package/release review.

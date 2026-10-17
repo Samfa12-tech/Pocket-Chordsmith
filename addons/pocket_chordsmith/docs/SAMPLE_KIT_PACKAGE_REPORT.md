@@ -11,7 +11,7 @@ version1.3.0 published.
 
 | Payload | Count | Bytes | Notes |
 | --- | ---: | ---: | --- |
-| Default addon package input | 147 files | See final candidate receipt | Excludes `.uid`, `.import`, hidden files, `_trace_compare/`, and `tmp_*` files. |
+| Default addon package input | 159 files | See final candidate receipt | Excludes `.uid`, `.import`, hidden files, `_trace_compare/`, and `tmp_*` files. |
 | `audio/web_kit/` | 61 files | 2,265,227 | 60 generated WAVs plus `pocket_chordsmith_web_kit_profile.tres`. |
 | Compressed addon ZIP | 1 ZIP | See final candidate receipt | Built by `tools/package_pocket_chordsmith_addon.gd`; exact bytes vary because this report is packaged inside the ZIP. Older1.2.0 archive measurements are historical. |
 

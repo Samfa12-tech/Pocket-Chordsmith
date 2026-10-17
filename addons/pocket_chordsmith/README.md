@@ -2,17 +2,16 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Source candidate: `1.3.0`; latest public release: `1.2.0`. The candidate adds Campfire Acoustic, prepared loading/audition and fully arranged native DAW pack playback while preserving PCS schema-17 identity, expressive events and legacy imports.
+Version `1.3.0` adds Campfire Acoustic, prepared loading/audition and fully arranged native DAW pack playback while preserving PCS schema-17 identity, expressive events and legacy imports.
 
-Candidate runtime validation uses Godot `4.6.3`. Candidate Store/Library metadata
-must target the tested `4.6` line; the public `4.4` listing describes the older
-release and is not a compatibility claim for this candidate. Runtime performance,
-installed/device and listening limits remain in `docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md`.
-The subsequent rendered-scene checkpoint and remaining release holds are recorded
-in [the 17 October runtime ledger](docs/REPRESENTATIVE_RUNTIME_CHECKPOINT_2026-10-17.md).
-The [subsequent corrections](docs/RUNTIME_FOLLOWUP_2026-10-17.md) identify the
-NUL-diagnostic cause and replace duplicated native-mode measurements with observed
-standalone/synchronized ownership evidence; historical performance holds remain.
+Runtime validation uses Godot `4.6.3` on Windows/WASAPI. Store/Library metadata
+targets the tested `4.6` line. The older `4.4` listing is not a compatibility claim
+for this release. Both Core-derived and native DAW-export listening checks passed.
+See [release acceptance and remaining limitations](docs/RELEASE_ACCEPTANCE_1_3_0.md).
+Historical intermittent stalls were not reproduced; their cause remains unknown.
+Whole-run frame overruns and Dummy-driver timing failures remain documented.
+The earlier runtime ledgers and [measurement corrections](docs/RUNTIME_FOLLOWUP_2026-10-17.md)
+are retained as historical evidence; the release acceptance records the final scope.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.

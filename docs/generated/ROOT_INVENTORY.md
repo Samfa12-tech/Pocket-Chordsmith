@@ -10,4 +10,4 @@
 | pocket-daw | `apps/pocket-daw/` | native-windows-app | public-alpha-source-ahead-of-public |
 | pocket-audio-core | `packages/pocket-audio-core/` | private-package-source | private-workspace-package |
 | pcs-format | `packages/pcs-format/` | private-package-source | private-workspace-package |
-| godot-addon | `addons/pocket_chordsmith/` | godot-addon | public-addon-source-ahead-of-public |
+| godot-addon | `addons/pocket_chordsmith/` | godot-addon | public-addon |

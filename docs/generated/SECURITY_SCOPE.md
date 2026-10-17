@@ -10,6 +10,6 @@ Security reports are accepted for every current component and repository-owned b
 - **Pocket DAW**: `apps/pocket-daw/` (public-alpha-source-ahead-of-public)
 - **Pocket Audio Core**: `packages/pocket-audio-core/` (private-workspace-package)
 - **PCS Format**: `packages/pcs-format/` (private-workspace-package)
-- **Pocket Chordsmith Godot addon**: `addons/pocket_chordsmith/` (public-addon-source-ahead-of-public)
+- **Pocket Chordsmith Godot addon**: `addons/pocket_chordsmith/` (public-addon)
 
 Runnable historical archives are unsupported and may contain fixed vulnerabilities. Reproduce archive issues against a current component before expecting a fix.

@@ -144,13 +144,13 @@
         "supportedGodot": "4.6.3"
       },
       "license": "MIT",
-      "releaseStatus": "public-addon-source-ahead-of-public",
+      "releaseStatus": "public-addon",
       "packageCommand": "godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- --output <zip>",
       "testCommand": "node scripts/verify-godot-ci.mjs --godot-bin <godot>",
       "deployment": {
         "channel": "Godot addon-only release",
-        "identifier": "1.2.0",
-        "sourceCommit": null
+        "identifier": "1.3.0; validated Godot4.6.3 Windows/WASAPI",
+        "sourceCommit": "e00f94683bf84d19c1095fb2a73b034469132af7"
       }
     }
   ]
