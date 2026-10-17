@@ -835,7 +835,9 @@ func _write_text_to_resource_path(path: String, text: String) -> int:
 
 func _is_safe_pack_relative_path(path: String) -> bool:
 	var candidate := path.trim_suffix("/")
-	if candidate.is_empty() or candidate.begins_with("/") or candidate.find(":") >= 0 or candidate.find(String.chr(0)) >= 0:
+	# String.chr(0) warns and returns U+FFFD on supported Godot4.6. Reject the
+	# same replacement character directly, preserving the existing path policy.
+	if candidate.is_empty() or candidate.begins_with("/") or candidate.find(":") >= 0 or candidate.find("\uFFFD") >= 0:
 		return false
 	for part in candidate.split("/"):
 		if part.is_empty() or part == "." or part == "..":

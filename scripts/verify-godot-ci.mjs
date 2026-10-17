@@ -42,6 +42,10 @@ try {
   run(["--headless", "--path", workspace, "--editor", "--quit"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_schema17_contract_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_trust_boundary_test.gd");
+  const packPathDiagnostic = runScript("res://addons/pocket_chordsmith/tests/pcs_pack_path_diagnostic_test.gd", ["--audio-driver", "Dummy"]);
+  if (`${packPathDiagnostic.stdout || ""}\n${packPathDiagnostic.stderr || ""}`.includes("Unexpected NUL character")) {
+    throw new Error("Pack-path diagnostic regression: valid path checks emitted Unexpected NUL character");
+  }
   runScript("res://addons/pocket_chordsmith/tests/pcs_game_pack_mix_contract_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_wav_ending_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_arrangement_ending_test.gd", ["--audio-driver", "Dummy"]);

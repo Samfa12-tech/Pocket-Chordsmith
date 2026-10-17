@@ -421,7 +421,9 @@ static func _canonical_section_id(key: String) -> String:
 
 
 static func _is_safe_pack_relative_path(path: String) -> bool:
-	if path.begins_with("/") or path.find(":") >= 0 or path.find(String.chr(0)) >= 0:
+	# String.chr(0) warns and returns U+FFFD on supported Godot4.6. Reject the
+	# same replacement character directly, preserving the existing path policy.
+	if path.begins_with("/") or path.find(":") >= 0 or path.find("\uFFFD") >= 0:
 		return false
 	for part in path.split("/"):
 		if part.is_empty() or part == "." or part == "..":
