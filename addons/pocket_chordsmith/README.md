@@ -2,7 +2,16 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.2.0`, with PCS schema-17 profile identity, expressive-event preservation, capability/loss diagnostics, Funk/Western/Chiptune/Heavy Metal preview aliases, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
+Version `1.3.0` adds Campfire Acoustic, prepared loading/audition and fully arranged native DAW pack playback while preserving PCS schema-17 identity, expressive events and legacy imports.
+
+Runtime validation uses Godot `4.6.3` on Windows/WASAPI. Store/Library metadata
+targets the tested `4.6` line. The older `4.4` listing is not a compatibility claim
+for this release. Both Core-derived and native DAW-export listening checks passed.
+See [release acceptance and remaining limitations](docs/RELEASE_ACCEPTANCE_1_3_0.md).
+Historical intermittent stalls were not reproduced; their cause remains unknown.
+Whole-run frame overruns and Dummy-driver timing failures remain documented.
+The earlier runtime ledgers and [measurement corrections](docs/RUNTIME_FOLLOWUP_2026-10-17.md)
+are retained as historical evidence; the release acceptance records the final scope.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
@@ -41,6 +50,11 @@ Editor workflow:
 7. Save the compiled chart as `.tres` or `.res`.
 8. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
 
+With prepared audio assigned, open **Prepared passage and listening cue (optional)**
+to hear a finite section transition or native DAW bar passage. The visible range,
+lead-in, tail allowance and Stop apply only to that audition; opening it never
+autoplays. See [workflow and tested limits](docs/PREPARED_PASSAGE_AUDITION_2026-10-16.md).
+
 Push-to-Godot workflow from the browser app:
 
 1. In Pocket Chordsmith, open Settings > Project & export.
@@ -56,8 +70,8 @@ Pocket DAW pack workflow:
 
 1. Export `Godot Adaptive Pack` from Pocket DAW.
 2. In the Godot `Chordsmith` tab, click `Import DAW Pack` and choose the exported ZIP.
-3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/`, compiles the embedded Pocket Chordsmith source into a chart resource, and creates a `PCSPlaybackProfile` pointing at the rendered full mix, stems, and section loops.
-4. Adaptive section stems are stored in `PCSPlaybackProfile.section_stem_sets` by canonical section (`A`-`H`) and normalized stem name (`drums`, `bass`, `chords`, `guitar`, `melody`, etc.).
+3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/` and creates a compiled chart and `PCSPlaybackProfile`. New native DAW packs use their exported arrangement clock and default to the full native mix. This preserves later clip edits, gaps, recorded-media placement, FX, automation and rendered tails. The original `.pocketdaw` source stays in the pack for editing.
+4. Chordsmith/Core and legacy packs keep their existing source/adaptive section route. New native arrangement charts expose bar/beat timing and authored markers over one global `daw_arrangement` occurrence. They use prepared audio rather than rebuilding native DSP or substituting embedded PCS sections. Note-level game-event reconstruction and adaptive section remixes of a native arrangement are not implied.
 5. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
 
 This DAW pack path is intentionally lighter for Godot than a text-only Chordsmith import: the expensive rendering work has already happened, and the addon mostly extracts files, compiles the chart, creates references, and routes audio through Godot buses.
@@ -132,6 +146,57 @@ Playback backends:
 - `STEM_SYNC`: preferred shipped-game path using rendered stems and Godot playback.
 - `HYBRID`: stems for the main bed plus event-triggered accents or stingers.
 - `PROCEDURAL_PREVIEW`: editor-oriented preview mode, not the default mobile runtime path.
+
+Prepare selected stems in a loading scene before starting gameplay:
+
+```gdscript
+var preparation = await conductor.prewarm_sections_async(["A", "B"])
+if preparation.ok:
+    conductor.play()
+```
+
+This helper yields between assets and never starts playback itself. Use
+`cancel_audio_prewarm()` when cancelling the loading screen; replacing the
+playback profile also cancels pending work, so an old request cannot refill the
+new profile's cache. Preparation reports `loaded`, `failed`, `cached_streams`,
+`cancelled`, `threaded_assets`, `max_thread_wait_us` and `max_asset_load_us`.
+Imported `res://` resources use Godot's threaded loader. A root-owned job drains
+each request even if the conductor exits; cancellation completes its consumer
+without promoting stale PCM. Raw unimported WAV decoding and prepared PCM ending
+guards remain synchronous: inspect the measured main-thread cost and prepare
+before gameplay. This is not a per-frame time guarantee. Native DAW packs use
+global full-song assets; await `prewarm_arrangement_async()` for those profiles.
+The existing synchronous `prewarm_section(s)` and `prewarm_audio` APIs remain
+available for callers that already manage their loading phase.
+
+Core `LOOP_KIT` profiles repeat exact-length prepared section WAVs on Godot's
+audio thread. Repeating the same prepared set keeps its players running across
+the gameplay boundary; explicit seeks or different section assets still restart
+the selected streams. Source WAV bytes and authored loop points are preserved.
+Set the manifest import option `loop_prepared_sections: false` to retain the
+older section restart policy. Ordinary full-song profiles keep their existing
+policy. This does not promise sample-accurate transitions between different
+assets or tail crossfades; those require separate runtime validation.
+
+For a full native arrangement, the low-level manifest/profile API accepts
+`playback_scope: "arrangement"`. It selects only the full-song assets, preserving
+their zero origin even when section or state overrides exist. Combine it with
+`playback_mix: "full-mix"` for the native reference, or `"layers"` for independent
+stems. The default `"adaptive"` scope retains section/state selection; section-only
+packs cannot use arrangement scope. For new native DAW packs with `nativeTimeline`,
+the high-level importer selects arrangement scope and compiles the matching native
+clock instead of embedded PCS sections. It reads the full-mix WAV's actual duration
+so release tails remain playable. `playback_mix: "layers"` is an explicit alternative;
+independently rendered stems can differ from the full mix through nonlinear buses.
+Legacy packs without native timing metadata retain their old source chart path;
+re-export an edited DAW project to obtain the native arrangement chart. Import alone
+is not runtime audio parity acceptance.
+
+Native timing supports up to 16384 bars and bar-aligned meter changes. Unsupported
+size/fractional meter changes fail explicitly; ordinary native WAV export remains
+available. The mapped clock uses the same bounded PPQ/time points as native playback,
+including tempo automation. The editor identifies prepared arrangements and keeps
+procedural preview rendering disabled so it cannot replace the exported native mix.
 
 Adaptive music states:
 

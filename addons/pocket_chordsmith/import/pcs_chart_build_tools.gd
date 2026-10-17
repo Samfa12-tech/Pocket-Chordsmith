@@ -10,6 +10,7 @@ const SoundKitGenerator := preload("res://addons/pocket_chordsmith/editor/pcs_so
 const Validator := preload("res://addons/pocket_chordsmith/import/pcs_validator.gd")
 const GamePackManifest := preload("res://addons/pocket_chordsmith/import/pcs_game_pack_manifest.gd")
 const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
+const NativeArrangementChart := preload("res://addons/pocket_chordsmith/import/pcs_native_arrangement_chart.gd")
 
 const DEFAULT_DAW_PACK_IMPORT_ROOT := "res://music/pocket_chordsmith_packs"
 const MAX_SOURCE_TEXT_BYTES := 4 * 1024 * 1024
@@ -26,7 +27,10 @@ func compile_file(source_path: String, output_path := "", options := {}) -> Dict
 	if not FileAccess.file_exists(source_path):
 		result["errors"].append("Source file does not exist: %s" % source_path)
 		return result
-	var source_size := FileAccess.get_size(source_path)
+	var source_file := FileAccess.open(source_path, FileAccess.READ)
+	var source_size: int = source_file.get_length() if source_file != null else -1
+	if source_file != null:
+		source_file.close()
 	if source_size < 0 or source_size > MAX_SOURCE_TEXT_BYTES:
 		result["errors"].append("Source file exceeds the %d-byte import limit: %s" % [MAX_SOURCE_TEXT_BYTES, source_path])
 		return result
@@ -107,6 +111,13 @@ func create_playback_profile_from_game_pack_manifest(manifest_path: String, save
 	var profile_result: Dictionary = GamePackManifest.create_playback_profile_from_manifest(manifest_result.get("manifest", {}), resolved_pack_root, options)
 	if not bool(profile_result.get("ok", false)):
 		return profile_result
+	if bool(options.get("preserve_wav_pcm", true)):
+		var wav_result := _configure_pack_wav_imports(manifest_result.get("manifest", {}), resolved_pack_root)
+		profile_result["errors"].append_array(wav_result.get("errors", []))
+		profile_result["wav_import_paths"] = wav_result.get("paths", [])
+		if not profile_result["errors"].is_empty():
+			profile_result["ok"] = false
+			return profile_result
 
 	if not save_path.strip_edges().is_empty():
 		var profile = profile_result.get("profile", null)
@@ -117,6 +128,58 @@ func create_playback_profile_from_game_pack_manifest(manifest_path: String, save
 			return profile_result
 		profile_result["path"] = save_path
 	return profile_result
+
+
+func _configure_pack_wav_imports(manifest: Dictionary, pack_root: String) -> Dictionary:
+	var result := {"paths": [], "errors": []}
+	var candidates: Array = []
+	var maps: Array = [manifest.get("assets", {})]
+	var sections = manifest.get("sections", {})
+	for section in sections.values() if sections is Dictionary else []:
+		if section is Dictionary:
+			maps.append(section.get("assets", {}))
+	var states = manifest.get("states", {})
+	for state in states.values() if states is Dictionary else []:
+		if state is Dictionary:
+			maps.append(state.get("stems", state.get("assets", {})))
+	for assets in maps:
+		if assets is Dictionary:
+			candidates.append_array(assets.values())
+	for stem in manifest.get("stems", []):
+		if stem is Dictionary:
+			candidates.append(stem.get("packPath", ""))
+	for section in manifest.get("sectionLoops", []):
+		if section is Dictionary:
+			candidates.append(section.get("packPath", section.get("path", "")))
+	candidates.append(manifest.get("fullMix", ""))
+	var seen := {}
+	for candidate in candidates:
+		if not candidate is String or str(candidate).contains(":"):
+			continue # Never rewrite import settings of external project assets.
+		var path := GamePackManifest.resolve_asset_path(str(candidate), pack_root)
+		if path.is_empty() or not path.begins_with("res://") or path.get_extension().to_lower() != "wav" or seen.has(path):
+			continue
+		seen[path] = true
+		var config := ConfigFile.new()
+		var import_path := path + ".import"
+		var load_error := config.load(import_path)
+		if load_error != OK and load_error != ERR_FILE_NOT_FOUND:
+			result["errors"].append("Cannot read WAV import settings for %s: %s" % [path, error_string(load_error)])
+			continue
+		config.set_value("remap", "importer", "wav")
+		config.set_value("remap", "type", "AudioStreamWAV")
+		# Godot 4.6 defaults to lossy QOA. Preserve PCM16, channels, rate, gain
+		# and alignment. Godot converts float WAVs to PCM16 internally; disabling
+		# compression does not preserve float precision. Keep authored loop points.
+		for key in ["force/8_bit", "force/mono", "force/max_rate", "edit/normalize", "edit/trim"]:
+			config.set_value("params", key, false)
+		config.set_value("params", "compress/mode", 0)
+		var save_error := config.save(import_path)
+		if save_error != OK:
+			result["errors"].append("Cannot save lossless WAV import settings for %s: %s" % [path, error_string(save_error)])
+		else:
+			result["paths"].append(path)
+	return result
 
 
 func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PACK_IMPORT_ROOT, options := {}) -> Dictionary:
@@ -165,7 +228,14 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	if profile_stem.is_empty():
 		profile_stem = source_path.get_file().get_basename()
 	var profile_path := _resource_path_join(pack_root, "%s_playback_profile.tres" % profile_stem)
-	var profile_result: Dictionary = create_playback_profile_from_game_pack_manifest(manifest_path, profile_path, pack_root, options)
+	var native_arrangement := manifest.has("nativeTimeline")
+	var profile_options: Dictionary = options.duplicate()
+	if native_arrangement:
+		profile_options["playback_scope"] = "arrangement"
+		# Exact native full mix is the safe default; layers remain explicit choices.
+		if not profile_options.has("playback_mix"):
+			profile_options["playback_mix"] = "full-mix"
+	var profile_result: Dictionary = create_playback_profile_from_game_pack_manifest(manifest_path, profile_path, pack_root, profile_options)
 	result["warnings"].append_array(profile_result.get("warnings", []))
 	result["errors"].append_array(profile_result.get("errors", []))
 	if not bool(profile_result.get("ok", false)):
@@ -184,9 +254,11 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 
 	var charts_dir := _resource_path_join(pack_root, "charts")
 	_ensure_resource_dir(charts_dir)
-	var compile_result := compile_file(source_project_path, charts_dir, {
-		"save_beside_source": false,
-	})
+	var compile_result: Dictionary
+	if native_arrangement:
+		compile_result = _compile_native_arrangement(manifest, pack_root, source_project_path, charts_dir.path_join(profile_stem + "_pcs_chart.tres"))
+	else:
+		compile_result = compile_file(source_project_path, charts_dir, {"save_beside_source": false})
 	result["compiled"].append_array(compile_result.get("compiled", []))
 	result["warnings"].append_array(compile_result.get("warnings", []))
 	result["errors"].append_array(compile_result.get("errors", []))
@@ -204,6 +276,22 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	result["playback_profile"] = profile_result.get("profile", null)
 	result["profile"] = profile_result.get("profile", null)
 	result["entries"] = entries
+	return result
+
+
+func _compile_native_arrangement(manifest: Dictionary, pack_root: String, source_path: String, save_path: String) -> Dictionary:
+	var compiled := NativeArrangementChart.compile_manifest(manifest, pack_root, source_path)
+	var result := _empty_result()
+	result["errors"].append_array(compiled.get("errors", []))
+	if not bool(compiled.get("ok", false)):
+		return result
+	var chart = compiled.chart
+	var error := ResourceSaver.save(chart, _resource_save_path(save_path))
+	if error != OK:
+		result["errors"].append("Could not save native arrangement chart: %s" % error_string(error))
+		return result
+	result["compiled"].append({"source": source_path, "path": save_path, "id": "daw_arrangement", "events": chart.compiled_events.size(), "warnings": []})
+	result["ok"] = true
 	return result
 
 
@@ -490,7 +578,10 @@ func _extract_game_pack_zip(zip_path: String, destination_root: String, options:
 		"errors": [],
 	}
 	var reader := ZIPReader.new()
-	var archive_size := FileAccess.get_size(zip_path)
+	var archive_file := FileAccess.open(zip_path, FileAccess.READ)
+	var archive_size: int = archive_file.get_length() if archive_file != null else -1
+	if archive_file != null:
+		archive_file.close()
 	if archive_size < 0 or archive_size > MAX_ZIP_BYTES:
 		result["errors"].append("DAW pack ZIP exceeds the %d-byte archive limit." % MAX_ZIP_BYTES)
 		return result
@@ -744,7 +835,9 @@ func _write_text_to_resource_path(path: String, text: String) -> int:
 
 func _is_safe_pack_relative_path(path: String) -> bool:
 	var candidate := path.trim_suffix("/")
-	if candidate.is_empty() or candidate.begins_with("/") or candidate.find(":") >= 0 or candidate.find(String.chr(0)) >= 0:
+	# String.chr(0) warns and returns U+FFFD on supported Godot4.6. Reject the
+	# same replacement character directly, preserving the existing path policy.
+	if candidate.is_empty() or candidate.begins_with("/") or candidate.find(":") >= 0 or candidate.find("\uFFFD") >= 0:
 		return false
 	for part in candidate.split("/"):
 		if part.is_empty() or part == "." or part == "..":

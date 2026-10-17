@@ -56,6 +56,27 @@ The runtime should not parse full JSON per frame, spawn nodes per note, or synth
 
    Future `STEM_SYNC` work should support overlap/crossfade players for state changes, short pre-roll where needed, and clean transitions between section stem sets.
 
+   Extend editor audition with the [shared hear/compare/keep workflow](../../../docs/public-roadmap.md#next-update-workflow-refinements-hear-compare-keep):
+   select a state transition and hear its prepared lead-in, boundary and tail.
+   Compare original/proposed transition settings at the same musical position;
+   Apply is one undoable editor change and Discard preserves the original.
+   Optional listen-for A/B explains an observed gap, overlap or level change,
+   with honest not-checked/uncertain status and manual override. Test Stop,
+   repeated transitions and stale assets; do not add analysis/render work to
+   gameplay frames or treat preview as proof of production two-source parity.
+
+## Next-update instrument slice: Campfire Acoustic
+
+See the [canonical cross-family plan](../../../docs/CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md)
+for the planned Towtal Chaos guitar addition. Godot work covers preserved
+instrument/recipe/performance intent, explicit preview capabilities, matching
+prepared stems and section loops, and playback/export validation from both
+Chordsmith/Core and native DAW. Keep STEM_SYNC/HYBRID as the production path.
+Native preview parity is optional and needs separate licensing, listening and
+performance evidence; it must not introduce per-note synthesis on gameplay frames.
+Existing import, loading, transition and two-source fidelity priorities remain
+unchanged. Implementation and acceptance are pending.
+
 ## Runtime Budget Rules
 
 The shipped-game runtime should aim for predictable audio cost:

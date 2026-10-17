@@ -56,9 +56,14 @@ const TICKS_PER_QUARTER := 480
 @export var mood := ""
 @export var import_warnings: Array[String] = []
 @export var original_metadata: Dictionary = {}
+## Native DAW packs keep absolute prepared-audio timing separate from PCS notes.
+@export var native_timeline: Dictionary = {}
+@export var native_audio_duration_seconds := 0.0
 
 
 func get_length_ticks() -> int:
+	if not native_timeline.is_empty():
+		return ceili(seconds_to_tick(native_audio_duration_seconds))
 	if arrangement_positions.is_empty():
 		return 0
 	var last: Dictionary = arrangement_positions[arrangement_positions.size() - 1]
@@ -67,6 +72,56 @@ func get_length_ticks() -> int:
 
 func get_seconds_per_tick() -> float:
 	return 60.0 / max(1.0, float(bpm)) / float(ticks_per_quarter)
+
+
+func tick_to_seconds(tick: float) -> float:
+	return _native_coordinate(tick / float(ticks_per_quarter), "projectPpq", "timeSeconds") if not native_timeline.is_empty() else tick * get_seconds_per_tick()
+
+
+func seconds_to_tick(seconds: float) -> float:
+	return _native_coordinate(seconds, "timeSeconds", "projectPpq") * float(ticks_per_quarter) if not native_timeline.is_empty() else seconds / get_seconds_per_tick()
+
+
+func _native_coordinate(value: float, input: String, output: String) -> float:
+	var points: Array = native_timeline.get("transportMap", [])
+	var low := 0
+	var high := points.size()
+	while low + 1 < high:
+		var middle := (low + high) / 2
+		if float(points[middle][input]) <= value:
+			low = middle
+		else:
+			high = middle
+	var previous: Dictionary = points[low]
+	if low + 1 < points.size():
+		var next: Dictionary = points[low + 1]
+		var ratio := clampf((value - float(previous[input])) / (float(next[input]) - float(previous[input])), 0.0, 1.0)
+		return lerpf(float(previous[output]), float(next[output]), ratio)
+	var rate := float(previous.tempo) / 60.0
+	return float(previous[output]) + maxf(0.0, value - float(previous[input])) * (rate if input == "timeSeconds" else 1.0 / rate)
+
+
+func native_bar_at_tick(tick: float) -> Dictionary:
+	var bars: Array = native_timeline.get("bars", [])
+	if bars.is_empty():
+		return {}
+	var low := 0
+	var high := bars.size()
+	while low + 1 < high:
+		var middle := (low + high) / 2
+		if float(bars[middle].startTick) <= tick:
+			low = middle
+		else:
+			high = middle
+	return bars[low]
+
+
+func native_position_at_tick(tick: float) -> Dictionary:
+	var row := native_bar_at_tick(tick)
+	if row.is_empty():
+		return {}
+	var beat_ticks := float(ticks_per_quarter) * 4.0 / float(row.denominator)
+	return {"bar": int(row.bar), "beat": mini(int(row.numerator), maxi(1, floori((tick - float(row.startTick)) / beat_ticks) + 1))}
 
 
 func find_section_at_tick(tick: int) -> Dictionary:

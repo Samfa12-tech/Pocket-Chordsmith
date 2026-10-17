@@ -10,6 +10,6 @@
 | Pocket DAW | - | - | - | - | - | - | - | - | - | - | 0.6.59 | 3 | 0.6.50 | 0.6.50 | - | - | - | - | - |
 | Pocket Audio Core | 0.3.0 | - | - | - | - | - | - | - | - | - | - | - | - | - | 16,17 | - | - | - | - |
 | PCS Format | 0.2.0 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | 17 | 16 | - | - |
-| Pocket Chordsmith Godot addon | - | - | - | - | - | - | - | - | - | - | - | - | - | - | 16,17 | - | - | 1.2.0 | 4.6.3 |
+| Pocket Chordsmith Godot addon | - | - | - | - | - | - | - | - | - | - | - | - | - | - | 16,17 | - | - | 1.3.0 | 4.6.3 |
 
 Version domains are intentionally independent. Compatibility is expressed by schema/core fields, not by forcing one family-wide version.
