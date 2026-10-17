@@ -4,6 +4,8 @@ class_name PocketChordsmithConductor
 
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
+const PreparedWav := preload("res://addons/pocket_chordsmith/runtime/pcs_prepared_wav.gd")
+const AudioAssetLoadJob := preload("res://addons/pocket_chordsmith/runtime/pcs_audio_asset_load_job.gd")
 
 const NATIVE_BASS_SAMPLE_RATE := 44100
 const DEFAULT_SAMPLE_PREVIEW_MIX := {
@@ -70,6 +72,7 @@ var _event_cursor := 0
 var _audio_event_cursor := 0
 var _last_beat_index := -1
 var _last_bar_index := -1
+var _native_last_timing_tick := -1
 var _last_section_id := ""
 var _queued_section := ""
 var _active_intensity := ""
@@ -81,9 +84,13 @@ var _base_bus_volumes := {}
 var _queued_transition := {}
 var _current_sequence_index := 0
 var _sequence_should_loop := true
+var _default_arrangement_sequence := false
 var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stem_layer_players := {}
+var _prepared_stem_origin_tick := 0
+var _prepared_stem_sources := {}
+var _native_stem_seek_pending := false
 var _stinger_player: AudioStreamPlayer
 var _stinger_playback: AudioStreamPlaybackPolyphonic
 var _polyphonic_players := {}
@@ -114,6 +121,9 @@ var _sample_preview_recent_native_fallbacks := []
 var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
+var _audio_prepare_generation := 0
+var _pending_audio_load_jobs: Array[Node] = []
+var _pending_audio_frame_waits: Array[Node] = []
 var _last_audio_prewarm_signature := ""
 var _warned_missing_stem_sections := {}
 var _native_bass_stream_cache := {}
@@ -143,6 +153,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
 	_stop_polyphonic_streams()
 	_active_stinger_ids.clear()
 	_stinger_return_states.clear()
@@ -202,11 +214,15 @@ func _stop_polyphonic_streams() -> void:
 
 
 func set_playback_profile(profile: Resource, stop_active_samples := true) -> void:
+	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
 	if stop_active_samples:
 		_stop_polyphonic_streams()
 		_remove_sample_preview_pan_buses()
 	playback_profile = profile if profile != null else PlaybackProfile.new()
+	_prepared_stem_sources.clear()
 	_audio_stream_cache.clear()
+	_last_audio_prewarm_signature = ""
 	_clear_native_preview_caches()
 	_last_playback_warning_signature = ""
 	_setup_native_audio_players()
@@ -245,12 +261,14 @@ func stop() -> void:
 	_playing = false
 	_paused = false
 	current_tick = 0
+	_native_stem_seek_pending = false
 	_tick_float = 0.0
 	_event_cursor = 0
 	_audio_event_cursor = 0
 	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = -1
 	_last_bar_index = -1
+	_native_last_timing_tick = -1
 	_last_section_id = ""
 	current_section = ""
 	current_bar = 1
@@ -264,6 +282,7 @@ func stop() -> void:
 
 func pause() -> void:
 	_paused = true
+	_set_native_stems_paused(true)
 
 
 func resume() -> void:
@@ -271,9 +290,13 @@ func resume() -> void:
 		_playing = true
 		_paused = false
 		_reset_wall_clock_anchor()
+		if _native_stem_seek_pending:
+			_start_native_stems_from_current_tick()
+		else:
+			_set_native_stems_paused(false)
 
 
-func seek_tick(tick: int) -> void:
+func seek_tick(tick: int, sync_stems := true) -> void:
 	if chart == null:
 		return
 	current_tick = clamp(tick, 0, max(0, chart.get_length_ticks()))
@@ -285,9 +308,13 @@ func seek_tick(tick: int) -> void:
 	reset_native_preview_prewarm_cursor(current_tick)
 	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = int(floor(float(current_tick) / float(chart.ticks_per_quarter))) - 1
+	_native_last_timing_tick = current_tick - 1
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
 	_update_position_fields()
 	_last_section_id = current_section
+	if sync_stems and _playing:
+		_prepare_stem_sync_for_current_state()
+		_start_native_stems_from_current_tick()
 
 
 func jump_to_section(section_id: String) -> void:
@@ -298,7 +325,7 @@ func jump_to_section(section_id: String) -> void:
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' in the arrangement." % section_id)
 		return
-	seek_tick(target_tick)
+	seek_tick(target_tick, false)
 	_emit_current_section_started()
 	_sync_sequence_index_to_section(canonical_section)
 	_prepare_stem_sync_for_current_state()
@@ -520,7 +547,7 @@ func prewarm_audio(include_stems := true, include_native_preview := false) -> Di
 	_prewarm_audio_dictionary(playback_profile.accent_streams, seen, report, true)
 	if include_stems:
 		for stem_map in _all_stem_maps_for_prewarm():
-			_prewarm_audio_dictionary(stem_map, seen, report, false)
+			_prewarm_audio_dictionary(stem_map, seen, report, false, true)
 	if include_native_preview:
 		_sync_native_preview_cache_signature()
 		_prewarm_native_preview_streams(report)
@@ -545,7 +572,7 @@ func prewarm_section(section_id: String) -> bool:
 	var stem_map := _section_stem_map(section_id)
 	if stem_map.is_empty():
 		return false
-	_prewarm_audio_dictionary(stem_map, seen, report, false)
+	_prewarm_audio_dictionary(stem_map, seen, report, false, true)
 	return bool(report.get("ok", false)) and int(report.get("failed", 0)) == 0
 
 
@@ -556,6 +583,141 @@ func prewarm_sections(section_ids: Array) -> Dictionary:
 		if not section_id.is_empty():
 			out[section_id] = prewarm_section(section_id)
 	return out
+
+
+## Loading-scene preparation: imported resources load on Godot's worker thread.
+## Raw, unimported WAV decoding and prepared ending guards remain synchronous;
+## max_asset_load_us reports main-thread preparation cost, not worker wait time.
+func prewarm_sections_async(section_ids: Array) -> Dictionary:
+	var values: Array = []
+	var warnings: Array = []
+	if playback_profile != null:
+		for section_value in section_ids:
+			var stem_map := _section_stem_map(str(section_value))
+			if stem_map.is_empty():
+				warnings.append("No prepared stems for section: %s" % str(section_value))
+			values.append_array(stem_map.values())
+	return await _prewarm_prepared_audio_values_async(values, warnings)
+
+
+## Native DAW arrangement packs use global prepared assets, not section sets.
+func prewarm_arrangement_async() -> Dictionary:
+	var values: Array = playback_profile.stem_paths.values() if playback_profile != null else []
+	return await _prewarm_prepared_audio_values_async(values, ["No full-song prepared stems are assigned."] if values.is_empty() else [])
+
+
+func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dictionary:
+	var generation := _audio_prepare_generation
+	var profile := playback_profile
+	var preparation_signature := _audio_prewarm_signature(true, false)
+	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": warnings.size(), "warnings": warnings.duplicate(), "max_asset_load_us": 0, "max_thread_wait_us": 0, "max_worker_prepare_us": 0, "threaded_assets": 0, "cached_streams": _audio_stream_cache.size()}
+	if profile == null or not is_inside_tree():
+		report.warnings.append("A playback profile and active loading scene are required for section preparation.")
+		return report
+	var seen := {}
+	for value in values:
+		# Give the caller a frame to display loading/cancellation before any I/O.
+		var frame_wait := _create_audio_preparation_frame_wait()
+		get_tree().root.add_child(frame_wait)
+		if generation != _audio_prepare_generation or not is_inside_tree():
+			frame_wait.detach_consumer()
+			report.cancelled = true
+			return report
+		_pending_audio_frame_waits.append(frame_wait)
+		await frame_wait.completed
+		_pending_audio_frame_waits.erase(frame_wait)
+		if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+			report.cancelled = true
+			report.cached_streams = _audio_stream_cache.size()
+			return report
+		var main_started := Time.get_ticks_usec()
+		var main_before_wait_us := 0
+		if value is String:
+			var path := str(value)
+			var key := _prepared_stem_cache_key(path) if profile.preserve_prepared_wav_endings or profile.loop_prepared_sections else _audio_cache_key(path)
+			var cached_prepared := _audio_stream_cache.get(key) as AudioStream
+			if cached_prepared != null and cached_prepared.has_meta("pcs_guard_mix_rate") and cached_prepared.get_meta("pcs_guard_mix_rate") != AudioServer.get_mix_rate():
+				_audio_stream_cache.erase(key)
+			var raw_key := _audio_cache_key(path)
+			var raw := _audio_stream_cache.get(raw_key) as AudioStream
+			var raw_needs_copy: bool = raw is AudioStreamWAV and raw.loop_mode == AudioStreamWAV.LOOP_DISABLED and raw.format in [AudioStreamWAV.FORMAT_8_BITS, AudioStreamWAV.FORMAT_16_BITS] and (profile.preserve_prepared_wav_endings or profile.loop_prepared_sections)
+			if path.begins_with("res://") and not seen.has(key) and not _audio_stream_cache.has(key) and (raw == null or raw_needs_copy) and ResourceLoader.exists(path):
+				var job = _create_audio_asset_load_job(path)
+				job.source_stream = raw
+				job.prepare_wav_endings = profile.preserve_prepared_wav_endings or profile.loop_prepared_sections
+				job.loop_sections = profile.loop_prepared_sections
+				job.output_mix_rate = AudioServer.get_mix_rate()
+				var requested_mix_rate: int = job.output_mix_rate
+				var needs_output_rate_guard: bool = job.prepare_wav_endings and not job.loop_sections
+				get_tree().root.add_child(job)
+				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+					job.detach_consumer()
+					report.cancelled = true
+					report.cached_streams = _audio_stream_cache.size()
+					return report
+				_pending_audio_load_jobs.append(job)
+				var waiting := Time.get_ticks_usec()
+				main_before_wait_us = waiting - main_started
+				var stream: AudioStream = await job.completed
+				main_started = Time.get_ticks_usec()
+				_pending_audio_load_jobs.erase(job)
+				report.max_thread_wait_us = maxi(report.max_thread_wait_us, Time.get_ticks_usec() - waiting)
+				if (needs_output_rate_guard and requested_mix_rate != AudioServer.get_mix_rate()) or job.was_detached() or generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+					report.cancelled = true
+					report.cached_streams = _audio_stream_cache.size()
+					return report
+				if stream == null:
+					report.failed += 1
+					report.warnings.append("Could not load imported audio resource: %s" % path)
+					seen[key] = true
+					continue
+				# The worker publishes an immutable prepared copy only after all original
+				# consumer/profile/epoch guards and the output-rate snapshot still match.
+				_audio_stream_cache[key if job.prepared_cacheable else raw_key] = stream
+				if job.prepared_cacheable and key != raw_key:
+					if job.prepared_is_copy:
+						_audio_stream_cache.erase(raw_key)
+					else:
+						# Preserve the existing raw/prepared aliases for unchanged
+						# compressed, non-WAV and unsupported-rate fallbacks.
+						_audio_stream_cache[raw_key] = stream
+				if not job.preparation_warning.is_empty():
+					push_warning(job.preparation_warning)
+				report.max_worker_prepare_us = maxi(report.max_worker_prepare_us, job.worker_prepare_us)
+				report.threaded_assets += 1
+		_prewarm_audio_value(value, seen, report, false, true)
+		report.max_asset_load_us = maxi(report.max_asset_load_us, main_before_wait_us + Time.get_ticks_usec() - main_started)
+		report.cached_streams = _audio_stream_cache.size()
+	report.ok = report.failed == 0
+	return report
+
+
+func cancel_audio_prewarm() -> void:
+	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
+
+
+func _create_audio_asset_load_job(path: String) -> Node:
+	var job := AudioAssetLoadJob.new()
+	job.asset_path = path
+	return job
+
+
+func _create_audio_preparation_frame_wait() -> Node:
+	return preload("res://addons/pocket_chordsmith/runtime/pcs_audio_prepare_frame_wait.gd").new()
+
+
+func _detach_audio_load_consumers() -> void:
+	var frame_waits := _pending_audio_frame_waits.duplicate()
+	_pending_audio_frame_waits.clear()
+	for frame_wait in frame_waits:
+		if is_instance_valid(frame_wait):
+			frame_wait.detach_consumer()
+	var jobs := _pending_audio_load_jobs.duplicate()
+	_pending_audio_load_jobs.clear()
+	for job in jobs:
+		if is_instance_valid(job):
+			job.detach_consumer()
 
 
 func get_missing_audio_assets() -> Array[String]:
@@ -878,9 +1040,9 @@ func _process(delta: float) -> void:
 	var previous_tick := current_tick
 	if _use_wall_clock_timing():
 		var elapsed_seconds := float(Time.get_ticks_usec() - _clock_anchor_usec) / 1000000.0
-		_tick_float = float(_clock_anchor_tick) + elapsed_seconds * _ticks_per_second()
+		_tick_float = chart.seconds_to_tick(chart.tick_to_seconds(float(_clock_anchor_tick)) + elapsed_seconds) if _has_native_timeline() else float(_clock_anchor_tick) + elapsed_seconds * _ticks_per_second()
 	else:
-		_tick_float += delta * _ticks_per_second()
+		_tick_float = chart.seconds_to_tick(chart.tick_to_seconds(_tick_float) + delta) if _has_native_timeline() else _tick_float + delta * _ticks_per_second()
 	current_tick = int(floor(_tick_float))
 	_process_previous_tick = previous_tick
 
@@ -888,6 +1050,8 @@ func _process(delta: float) -> void:
 	if not transitioned:
 		_process_sequence_progression(previous_tick, current_tick)
 	_handle_end_of_chart()
+	if _uses_whole_prepared_arrangement() and not _playing:
+		return
 	_update_stinger_finishes()
 	_update_position_fields()
 	_emit_timing_signals()
@@ -912,16 +1076,57 @@ func _handle_end_of_chart() -> void:
 	var length_ticks: int = chart.get_length_ticks()
 	if length_ticks <= 0 or current_tick < length_ticks:
 		return
+	if _uses_whole_prepared_arrangement():
+		# Gameplay frames can advance before queued PCM reaches the device. Let
+		# the selected Godot players consume their complete rendered endings.
+		if _native_arrangement_audio_playing():
+			return
+		if loop_enabled:
+			loop_completed.emit("arrangement")
+			seek_tick(0)
+			_emit_current_section_started()
+		else:
+			stop()
+		return
 	if loop_enabled:
 		loop_completed.emit("arrangement")
-		seek_tick(posmod(current_tick, length_ticks))
+		if playback_profile != null and playback_profile.loop_prepared_sections:
+			var previous_float := _tick_float
+			var previous_anchor_tick := _clock_anchor_tick
+			var previous_anchor_usec := _clock_anchor_usec
+			var target_float := fposmod(previous_float, float(length_ticks))
+			seek_tick(int(floor(target_float)), false)
+			if _continue_prepared_section_loop():
+				_restore_continuous_loop_clock(target_float, previous_float, previous_anchor_tick, previous_anchor_usec)
+			else:
+				_prepare_stem_sync_for_current_state()
+				_start_native_stems_from_current_tick()
+		else:
+			seek_tick(posmod(current_tick, length_ticks))
 		_emit_current_section_started()
 	else:
 		stop()
 
 
+func _native_arrangement_audio_playing() -> bool:
+	if _stem_player != null and _stem_player.playing:
+		return true
+	for value in _stem_layer_players.values():
+		var player := value as AudioStreamPlayer
+		if is_instance_valid(player) and player.playing:
+			return true
+	return false
+
+
 func _update_position_fields() -> void:
 	if chart == null:
+		return
+	if _has_native_timeline():
+		var position: Dictionary = chart.native_position_at_tick(float(current_tick))
+		current_bar = int(position.get("bar", 1))
+		current_beat = int(position.get("beat", 1))
+		current_section = "daw_arrangement"
+		current_arrangement_index = 0
 		return
 	var beat_ticks := max(1, chart.ticks_per_quarter)
 	var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
@@ -935,6 +1140,9 @@ func _update_position_fields() -> void:
 
 
 func _emit_timing_signals() -> void:
+	if _has_native_timeline():
+		_emit_native_timing_signals()
+		return
 	var beat_ticks := max(1, chart.ticks_per_quarter)
 	var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
 	var beat_index := int(floor(float(current_tick) / float(beat_ticks)))
@@ -949,6 +1157,31 @@ func _emit_timing_signals() -> void:
 		for index in range(_last_bar_index + 1, bar_index + 1):
 			bar_started.emit(index + 1)
 		_last_bar_index = bar_index
+
+
+func _has_native_timeline() -> bool:
+	return chart != null and not chart.native_timeline.is_empty()
+
+
+func _emit_native_timing_signals() -> void:
+	var bars: Array = chart.native_timeline.get("bars", [])
+	var first: Dictionary = chart.native_bar_at_tick(float(maxi(0, _native_last_timing_tick)))
+	var start_index := maxi(0, int(first.get("bar", 1)) - 1)
+	for index in range(start_index, bars.size()):
+		var row: Dictionary = bars[index]
+		if float(row.startTick) > current_tick:
+			break
+		var beat_ticks := float(chart.ticks_per_quarter) * 4.0 / float(row.denominator)
+		for number in range(int(row.numerator)):
+			var tick := roundi(float(row.startTick) + number * beat_ticks)
+			if tick >= float(row.endTick) or tick > current_tick:
+				break
+			if tick <= _native_last_timing_tick:
+				continue
+			if number == 0:
+				bar_started.emit(int(row.bar))
+			beat.emit(int(row.bar), number + 1)
+	_native_last_timing_tick = current_tick
 
 
 func _emit_section_changes() -> void:
@@ -1018,6 +1251,7 @@ func _emit_due_events() -> void:
 func _initialize_music_state() -> void:
 	if chart == null:
 		return
+	_default_arrangement_sequence = false
 	if playback_profile == null:
 		playback_profile = PlaybackProfile.new()
 	if not current_music_state.is_empty():
@@ -1029,6 +1263,7 @@ func _initialize_music_state() -> void:
 	elif not chart.arrangement.is_empty():
 		current_sequence = chart.arrangement.duplicate()
 		current_loop = "arrangement"
+		_default_arrangement_sequence = true
 	else:
 		current_sequence = ["A"]
 		current_loop = "A"
@@ -1077,6 +1312,7 @@ func _apply_queued_transition() -> void:
 		"section":
 			var section_id := str(transition.get("section_id", ""))
 			if not section_id.is_empty():
+				_default_arrangement_sequence = false
 				current_sequence = [section_id]
 				current_loop = section_id
 				_sequence_should_loop = bool(transition.get("loop", true))
@@ -1085,6 +1321,7 @@ func _apply_queued_transition() -> void:
 		"sequence":
 			var sequence := _string_array(transition.get("sequence", []))
 			if not sequence.is_empty():
+				_default_arrangement_sequence = false
 				current_sequence = sequence
 				current_loop = "-".join(current_sequence)
 				_sequence_should_loop = bool(transition.get("loop", true))
@@ -1108,6 +1345,7 @@ func _apply_music_state(state_name: String) -> void:
 
 
 func _apply_state_definition(state_name: String, seek_to_entry: bool) -> void:
+	_default_arrangement_sequence = false
 	var state_def := _state_definition(state_name)
 	var stinger := str(state_def.get("stinger", ""))
 	if not stinger.is_empty():
@@ -1145,9 +1383,32 @@ func _state_definition(state_name: String) -> Dictionary:
 	return {}
 
 
+func _uses_whole_prepared_arrangement() -> bool:
+	if _has_native_timeline():
+		return true
+	# The ordinary imported full song already contains every section and tail.
+	# Explicit adaptive states/queues and native section loops keep their own
+	# progression; do not infer default intent from a section or loop name.
+	return (
+		_default_arrangement_sequence
+		and playback_profile != null
+		and playback_profile.prepared_playback_scope == "arrangement"
+		and not playback_profile.stem_paths.is_empty()
+		and not playback_profile.loop_prepared_sections
+		and _sequence_matches_arrangement()
+	)
+
+
 func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 	if current_sequence.is_empty() or chart == null:
 		return
+	if _uses_whole_prepared_arrangement():
+		if not _has_native_timeline():
+			# Keep NEXT_LOOP queue boundaries correct without seeking/restarting
+			# the global PCM at each ordinary section boundary.
+			var occurrence: Dictionary = chart.find_section_at_tick(next_tick)
+			_current_sequence_index = int(occurrence.get("arrangement_index", 0))
+		return # The one global occurrence ends/loops only after its rendered tail.
 	var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 	if section_info.is_empty():
 		return
@@ -1159,7 +1420,7 @@ func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 				return
 			next_index = 0
 			loop_completed.emit(current_loop)
-		_seek_to_sequence_index(next_index)
+		_seek_to_sequence_index(next_index, true, maxf(0.0, _tick_float - float(end_tick)))
 
 
 func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> bool:
@@ -1167,9 +1428,13 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 		TransitionBoundary.IMMEDIATE:
 			return true
 		TransitionBoundary.NEXT_BEAT:
+			if _has_native_timeline():
+				return chart.native_position_at_tick(float(previous_tick)) != chart.native_position_at_tick(float(next_tick))
 			var beat_ticks := max(1, chart.ticks_per_quarter)
 			return int(floor(float(previous_tick) / float(beat_ticks))) != int(floor(float(next_tick) / float(beat_ticks)))
 		TransitionBoundary.NEXT_BAR:
+			if _has_native_timeline():
+				return int(chart.native_position_at_tick(float(previous_tick)).get("bar", 1)) != int(chart.native_position_at_tick(float(next_tick)).get("bar", 1))
 			var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
 			return int(floor(float(previous_tick) / float(bar_ticks))) != int(floor(float(next_tick) / float(bar_ticks)))
 		TransitionBoundary.NEXT_SECTION:
@@ -1179,6 +1444,11 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 			var end_tick := int(section_info.get("start_tick", 0)) + int(section_info.get("length_ticks", 0))
 			return previous_tick < end_tick and next_tick >= end_tick
 		TransitionBoundary.NEXT_LOOP:
+			if _uses_whole_prepared_arrangement() and not _has_native_timeline():
+				# A long frame or first post-seek frame can cross the final section
+				# before its sequence cursor advances. Use the absolute song end.
+				var arrangement_end: int = chart.get_length_ticks()
+				return arrangement_end > 0 and previous_tick < arrangement_end and next_tick >= arrangement_end
 			if current_sequence.is_empty():
 				return _boundary_reached(previous_tick, next_tick, TransitionBoundary.NEXT_SECTION)
 			var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
@@ -1200,7 +1470,7 @@ func _process_marker_transition(marker_name: String) -> void:
 		_apply_queued_transition()
 
 
-func _seek_to_sequence_index(index: int) -> void:
+func _seek_to_sequence_index(index: int, preserve_prepared_loop := false, overshoot_ticks := 0.0) -> void:
 	if current_sequence.is_empty():
 		return
 	_current_sequence_index = posmod(index, current_sequence.size())
@@ -1209,10 +1479,29 @@ func _seek_to_sequence_index(index: int) -> void:
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' for sequence playback." % section_id)
 		return
-	seek_tick(target_tick)
+	var previous_float := _tick_float
+	var previous_anchor_tick := _clock_anchor_tick
+	var previous_anchor_usec := _clock_anchor_usec
+	seek_tick(target_tick, false)
+	if preserve_prepared_loop and _continue_prepared_section_loop():
+		var occurrence: Dictionary = chart.find_section_at_tick(target_tick)
+		var length_ticks := maxi(1, int(occurrence.get("length_ticks", 1)))
+		var target_float := float(target_tick) + fposmod(overshoot_ticks, float(length_ticks))
+		_restore_continuous_loop_clock(target_float, previous_float, previous_anchor_tick, previous_anchor_usec)
+		_emit_current_section_started()
+		return
 	_emit_current_section_started()
 	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
+
+
+func _restore_continuous_loop_clock(target_float: float, previous_float: float, anchor_tick: int, anchor_usec: int) -> void:
+	# The audio thread never restarted. Translate the existing clock into the
+	# new occurrence rather than rebasing it at this late gameplay frame.
+	seek_tick(int(floor(target_float)), false)
+	_tick_float = target_float
+	_clock_anchor_tick = anchor_tick + roundi(target_float - previous_float)
+	_clock_anchor_usec = anchor_usec
 
 
 func _sequence_target_tick(index: int, section_id: String) -> int:
@@ -2032,26 +2321,66 @@ func _amount_to_effect_value(effect_name: String, amount: float):
 	return safe_amount
 
 
+func _continue_prepared_section_loop() -> bool:
+	if playback_profile == null or not playback_profile.loop_prepared_sections:
+		return false
+	var selection := _stem_selection_for_current_state()
+	var sources: Dictionary = selection.get("stems", {})
+	if sources.is_empty() or sources != _prepared_stem_sources:
+		return false
+	if _has_ready_stem_players():
+		var active := 0
+		for value in _stem_layer_players.values():
+			var player := value as AudioStreamPlayer
+			if is_instance_valid(player) and player.stream != null:
+				if not player.playing or not _is_prepared_section_loop(player.stream):
+					return false
+				active += 1
+		if active != sources.size():
+			return false
+	else:
+		if not is_instance_valid(_stem_player) or not _stem_player.playing or not (_stem_player.stream is AudioStreamSynchronized):
+			return false
+		var sync := _stem_player.stream as AudioStreamSynchronized
+		if sync.get_stream_count() != sources.size():
+			return false
+		for index in range(sync.get_stream_count()):
+			if not _is_prepared_section_loop(sync.get_sync_stream(index)):
+				return false
+	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
+	return true
+
+
+func _is_prepared_section_loop(stream: AudioStream) -> bool:
+	return stream is AudioStreamWAV and stream.loop_mode == AudioStreamWAV.LOOP_FORWARD and stream.get_meta("pcs_native_section_loop", false)
+
+
 func _prepare_stem_sync_for_current_state() -> void:
 	if playback_profile == null:
 		return
 	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
 	_setup_native_audio_players()
-	var stem_map := _stem_map_for_current_state()
+	var selection := _stem_selection_for_current_state()
+	var stem_map: Dictionary = selection.get("stems", {})
+	_prepared_stem_sources = stem_map.duplicate()
+	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
 	if stem_map.is_empty():
+		_stop_layer_stem_players(true)
+		_stem_player.stop()
+		_stem_player.stream = null
 		return
 	if not playback_profile.use_audio_stream_synchronized:
 		_prepare_layer_stem_players(stem_map)
 		return
-	_stop_layer_stem_players()
+	_stop_layer_stem_players(true)
 	var sync_stream := AudioStreamSynchronized.new()
 	var layers := stem_map.keys()
 	layers.sort()
 	sync_stream.set_stream_count(layers.size())
 	for index in range(layers.size()):
 		var layer_name := str(layers[index])
-		var stream := _load_audio_stream(stem_map[layer_name])
+		var stream := _load_prepared_stem_audio_stream(stem_map[layer_name])
 		if stream != null:
 			sync_stream.set_sync_stream(index, stream)
 			sync_stream.set_sync_stream_volume(index, float(_layer_volumes.get(layer_name, 0.0)))
@@ -2068,7 +2397,7 @@ func _prepare_layer_stem_players(stem_map: Dictionary) -> void:
 	layers.sort()
 	for layer_value in layers:
 		var layer_name := normalize_layer_name(str(layer_value))
-		var stream := _load_audio_stream(stem_map[layer_name])
+		var stream := _load_prepared_stem_audio_stream(stem_map[layer_name])
 		if stream == null:
 			continue
 		var player := _stem_player_for_layer(layer_name)
@@ -2106,34 +2435,57 @@ func _start_native_stems_from_current_tick() -> void:
 		return
 	if playback_profile != null and playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
-	var offset_seconds: float = float(current_tick) * float(chart.get_seconds_per_tick())
+	if _paused:
+		_native_stem_seek_pending = true
+		_set_native_stems_paused(true)
+		return
+	_native_stem_seek_pending = false
+	var offset_seconds: float = chart.tick_to_seconds(float(current_tick)) - chart.tick_to_seconds(float(_prepared_stem_origin_tick)) if _has_native_timeline() else float(max(0, current_tick - _prepared_stem_origin_tick)) * float(chart.get_seconds_per_tick())
 	if _has_ready_stem_players():
 		for player_value in _stem_layer_players.values():
 			var player := player_value as AudioStreamPlayer
 			if is_instance_valid(player) and player.stream != null:
+				player.stream_paused = false
 				player.play(offset_seconds)
 		return
 	if _stem_player != null and _stem_player.stream != null:
+		_stem_player.stream_paused = false
 		_stem_player.play(offset_seconds)
 
 
 func _stem_map_for_current_state() -> Dictionary:
+	return _stem_selection_for_current_state().get("stems", {})
+
+
+func _stem_selection_for_current_state() -> Dictionary:
 	if playback_profile == null:
 		return {}
+	if playback_profile.prepared_playback_scope == "arrangement":
+		return {"stems": _normalize_stem_map(playback_profile.stem_paths), "origin_tick": 0}
 	if not current_music_state.is_empty():
 		var state_map := _state_stem_map(current_music_state)
 		if not state_map.is_empty():
-			return state_map
+			return {"stems": state_map, "origin_tick": _state_stem_origin_tick()}
 	var section_map := _section_stem_map(current_section)
 	if not section_map.is_empty():
-		return section_map
+		var occurrence: Dictionary = chart.find_section_at_tick(current_tick) if chart != null else {}
+		return {"stems": section_map, "origin_tick": int(occurrence.get("start_tick", 0))}
 	if not current_music_state.is_empty() and playback_profile.stem_sets.has(current_music_state) and playback_profile.stem_sets[current_music_state] is Dictionary:
-		return _normalize_stem_map(playback_profile.stem_sets[current_music_state])
+		return {"stems": _normalize_stem_map(playback_profile.stem_sets[current_music_state]), "origin_tick": _state_stem_origin_tick()}
 	if not playback_profile.stem_paths.is_empty():
-		return _normalize_stem_map(playback_profile.stem_paths)
+		return {"stems": _normalize_stem_map(playback_profile.stem_paths), "origin_tick": 0}
 	if chart != null and not current_music_state.is_empty() and chart.stem_sets.has(current_music_state) and chart.stem_sets[current_music_state] is Dictionary:
-		return _normalize_stem_map(chart.stem_sets[current_music_state])
+		return {"stems": _normalize_stem_map(chart.stem_sets[current_music_state]), "origin_tick": _state_stem_origin_tick()}
 	return {}
+
+
+func _state_stem_origin_tick() -> int:
+	# Existing state sets retain arrangement-absolute playback unless the
+	# profile declares an explicit origin. Section sets are always local to
+	# the current occurrence, including repeated A/B sections.
+	if _profile_has_property("state_stem_origin_ticks"):
+		return max(0, int(playback_profile.state_stem_origin_ticks.get(current_music_state, 0)))
+	return 0
 
 
 func _state_stem_map(state_name: String) -> Dictionary:
@@ -2203,17 +2555,49 @@ func _profile_has_property(property_name: String) -> bool:
 	return false
 
 
+func _prepared_stem_cache_key(value) -> String:
+	var policy := "prepared-loop-v1" if playback_profile != null and playback_profile.loop_prepared_sections else "prepared-eof-v1"
+	if value is String:
+		return "%s:%s" % [policy, _audio_cache_key(str(value))]
+	return "%s:stream:%s" % [policy, str(value.get_instance_id())] if value is AudioStream else ""
+
+
+func _load_prepared_stem_audio_stream(value) -> AudioStream:
+	if playback_profile == null or (not playback_profile.preserve_prepared_wav_endings and not playback_profile.loop_prepared_sections):
+		return _load_audio_stream(value)
+	var key := _prepared_stem_cache_key(value)
+	if not key.is_empty() and _audio_stream_cache.has(key):
+		var cached := _audio_stream_cache[key] as AudioStream
+		if not cached.has_meta("pcs_guard_mix_rate") or cached.get_meta("pcs_guard_mix_rate") == AudioServer.get_mix_rate():
+			return cached
+		_audio_stream_cache.erase(key)
+	var source := _load_audio_stream(value)
+	if not (source is AudioStreamWAV):
+		if not key.is_empty() and source != null:
+			_audio_stream_cache[key] = source
+		return source
+	var prepared := PreparedWav.prepare(source, playback_profile.loop_prepared_sections, AudioServer.get_mix_rate())
+	if not prepared.warning.is_empty():
+		push_warning(prepared.warning)
+	if prepared.cache_prepared:
+		_audio_stream_cache[key] = prepared.stream
+		if value is String and prepared.stream != source:
+			_audio_stream_cache.erase(_audio_cache_key(str(value)))
+	return prepared.stream
+
+
+
 func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 	if value is AudioStream:
 		return value
 	if value is String:
 		var path := str(value)
-		var file_path := ProjectSettings.globalize_path(path)
-		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
-			return null
 		var cache_key := _audio_cache_key(path, prefer_uncompressed_wav)
 		if _audio_stream_cache.has(cache_key):
 			return _audio_stream_cache[cache_key]
+		var file_path := ProjectSettings.globalize_path(path)
+		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
+			return null
 		var should_load_wav_directly: bool = path.get_extension().to_lower() == "wav" and (
 			(prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed)
 			or path.begins_with("user://")
@@ -2244,6 +2628,8 @@ func _audio_prewarm_signature(include_stems := false, include_native_preview := 
 		str(include_stems),
 		str(include_native_preview),
 		str(playback_profile.sample_preview_load_wavs_uncompressed),
+		str(playback_profile.preserve_prepared_wav_endings),
+		str(playback_profile.loop_prepared_sections),
 	]
 	_append_audio_prewarm_map_signature(parts, playback_profile.drum_kit, true)
 	_append_audio_prewarm_map_signature(parts, playback_profile.event_sample_streams, true)
@@ -2301,13 +2687,15 @@ func _append_audio_prewarm_map_signature(parts: Array, stream_map: Dictionary, p
 	parts.append(",".join(values))
 
 
-func _prewarm_audio_dictionary(stream_map: Dictionary, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+func _prewarm_audio_dictionary(stream_map: Dictionary, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false, prepared_stem := false) -> void:
 	for value in stream_map.values():
-		_prewarm_audio_value(value, seen, report, prefer_uncompressed_wav)
+		_prewarm_audio_value(value, seen, report, prefer_uncompressed_wav, prepared_stem)
 
 
-func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false, prepared_stem := false) -> void:
 	if value is AudioStream:
+		if prepared_stem:
+			_load_prepared_stem_audio_stream(value)
 		report["loaded"] = int(report["loaded"]) + 1
 		return
 	if not (value is String):
@@ -2316,10 +2704,12 @@ func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_un
 	if path.is_empty():
 		return
 	var key := _audio_cache_key(path, prefer_uncompressed_wav)
+	if prepared_stem and playback_profile != null and (playback_profile.preserve_prepared_wav_endings or playback_profile.loop_prepared_sections):
+		key = _prepared_stem_cache_key(path)
 	if seen.has(key):
 		return
 	seen[key] = true
-	var stream := _load_audio_stream(path, prefer_uncompressed_wav)
+	var stream := _load_prepared_stem_audio_stream(path) if prepared_stem else _load_audio_stream(path, prefer_uncompressed_wav)
 	if stream != null:
 		report["loaded"] = int(report["loaded"]) + 1
 	else:
@@ -2333,11 +2723,22 @@ func _stop_native_stems() -> void:
 	_stop_layer_stem_players()
 
 
-func _stop_layer_stem_players() -> void:
+func _stop_layer_stem_players(clear_streams := false) -> void:
 	for player_value in _stem_layer_players.values():
 		var player := player_value as AudioStreamPlayer
 		if is_instance_valid(player):
 			player.stop()
+			if clear_streams:
+				player.stream = null
+
+
+func _set_native_stems_paused(paused: bool) -> void:
+	if is_instance_valid(_stem_player):
+		_stem_player.stream_paused = paused
+	for player_value in _stem_layer_players.values():
+		var player := player_value as AudioStreamPlayer
+		if is_instance_valid(player):
+			player.stream_paused = paused
 
 
 func _has_ready_stem_players() -> bool:
@@ -2351,7 +2752,7 @@ func _has_ready_stem_players() -> bool:
 func _has_playing_stem_players() -> bool:
 	for player_value in _stem_layer_players.values():
 		var player := player_value as AudioStreamPlayer
-		if is_instance_valid(player) and player.playing:
+		if is_instance_valid(player) and player.playing and not player.stream_paused:
 			return true
 	return false
 

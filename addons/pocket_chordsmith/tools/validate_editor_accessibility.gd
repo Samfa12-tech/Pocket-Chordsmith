@@ -1,7 +1,7 @@
 @tool
 extends SceneTree
 
-const EXPECTED_TOOLBAR_ACTIONS := 14
+const EXPECTED_TOOLBAR_ACTIONS := 16
 const MAIN_SCREEN := preload("res://addons/pocket_chordsmith/editor/pcs_main_screen.tscn")
 
 
@@ -36,6 +36,13 @@ func _validate() -> void:
 		if button.tooltip_text.strip_edges().is_empty():
 			_fail("Toolbar action '%s' has no explanatory tooltip." % button.text)
 			return
+	for control in [screen._prepared_from, screen._prepared_to, screen._prepared_bar, screen._prepared_lead, screen._prepared_tail, screen._prepared_hear, screen._prepared_stop]:
+		if control.focus_mode != Control.FOCUS_ALL or control.tooltip_text.strip_edges().is_empty():
+			_fail("A prepared-audition control is not named/explained or keyboard-focusable.")
+			return
+	if screen._prepared_audition.is_busy():
+		_fail("Opening prepared-audition controls must not autoplay.")
+		return
 
 	print(
 		"Pocket Chordsmith editor accessibility OK: %d toolbar actions are named, explained, and FOCUS_ALL."

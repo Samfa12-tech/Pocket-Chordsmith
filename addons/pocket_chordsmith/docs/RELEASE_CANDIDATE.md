@@ -38,6 +38,8 @@ Run the complete deterministic gate in `HEADLESS_VALIDATION.md` when chart compi
 
 For Godot Asset Library submission, use the verified addon-only release branch/tag. Do not use a normal monorepo commit or source archive: the download tree must contain only `addons/pocket_chordsmith/` and must exclude `.uid`, `.import`, `.godot`, generated caches, and export builds.
 
+The addon packager now reopens every generated ZIP, verifies that its file set exactly matches the intended `addons/pocket_chordsmith/` payload, rejects files outside that tree or generated import metadata, and prints the addon version plus exact SHA-256. Treat a successful verifier result as the required input to the dedicated addon-only release branch/tag; it does not make a normal monorepo source archive suitable for Asset Library delivery.
+
 ## RC Exit Criteria
 
 - Addon enables without editor errors.

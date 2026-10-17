@@ -18,8 +18,11 @@ enum PlaybackBackend {
 @export var emit_generated_events := true
 @export var mobile_safe := true
 @export var stem_paths: Dictionary = {}
+@export_enum("adaptive", "arrangement") var prepared_playback_scope := "adaptive"
 @export var stem_bus_names: Dictionary = {}
 @export var use_audio_stream_synchronized := true
+@export var preserve_prepared_wav_endings := false
+@export var loop_prepared_sections := false
 @export var use_audio_stream_polyphonic_for_accents := true
 @export var accent_streams: Dictionary = {}
 @export var event_sample_streams: Dictionary = {}
@@ -108,6 +111,7 @@ enum PlaybackBackend {
 @export var stem_sets: Dictionary = {}
 @export var section_stem_sets: Dictionary = {}
 @export var state_stem_sets: Dictionary = {}
+@export var state_stem_origin_ticks: Dictionary = {}
 @export var stem_playback_mode := "mixer_routed_stems"
 @export var section_transition_quantize := "bar"
 @export var transition_mode := "cut"
