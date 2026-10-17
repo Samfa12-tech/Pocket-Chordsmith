@@ -21,8 +21,8 @@ Future Pocket DJ sessions can export a `PDJ1` format that captures performance s
 
 Canonical source path: `apps/pocket-dj/`.
 
-The v1h source candidate uses Core0.3.0. The verified public itch channel remains
-v1g until the separate reviewed publication step.
+Published baseline: v1i with Core0.3.0 on the existing itch html channel and
+website mirror, from a31ffae545e0d50b5024dd1be746b834d6f7bed3. See ../../docs/CURRENT_RELEASES.md.
 
 - `index.html` redirects to `pocket_dj_v1i_core_bridge.html`.
 - `../archive/unsupported-runnable-builds/pocket-dj/pocket_dj_v1f_push_handoffs.html` is retained only as an unsupported historical snapshot and is excluded from current packages.

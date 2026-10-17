@@ -30,6 +30,11 @@ Public app links already referenced in this repo:
 - Pocket DAW alpha: `https://samfa12.itch.io/pocket-daw`
 - Pocket Audio Handoff: `https://samfa12.com/apps/pocket-audio-handoff/`
 
+Current published baselines (17 October2026): Chordsmithv70, DJv1i,
+Core0.3.0 (workspace/repository only), native DAW0.6.59, and Godot addon1.3.0.
+See [current release/support references](docs/CURRENT_RELEASES.md) for exact
+artifacts, source commits, installation guidance and retained limitations.
+
 The machine-readable component, version, compatibility, licence, release and
 deployment inventory is `FAMILY_MANIFEST.json`. Generated views live under
 `docs/generated/` and CI rejects drift from the manifest.
@@ -182,7 +187,7 @@ Security and responsible disclosure notes are in `SECURITY.md`.
 
 ## Project Notes
 
-- Current Godot addon release: `1.2.0`.
+- Current Godot addon release: `1.3.0`; Godot metadata4.6, validated4.6.3 Windows/WASAPI.
 - Keep `addons/pocket_chordsmith/` stable for Godot installs and addon-only packaging.
 - Lofi & Chill CD Baby upload/mastering closeout and Samfa12's Compilation
   Album #1 archive notes are recorded in
@@ -190,8 +195,9 @@ Security and responsible disclosure notes are in `SECURITY.md`.
   remain ignored under `release/`.
 - Do not commit generated output: `node_modules/`, `dist/`, `src-tauri/target/`,
   installers, release zips, Playwright reports, or local `.pocketdaw` saves.
-- GitHub source archives are full monorepo archives. Addon-only releases should
-  use `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd`.
+- Main/release-tag source archives contain the monorepo. Use the verified
+  addon-only ZIP or versioned `godot-addon-1.3.0` download branch for Godot.
+  Package future addons through `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd`.
 - Runnable historical builds live only under
   `apps/archive/unsupported-runnable-builds/`; they are immutable, excluded
   from release packages and unsupported for security fixes.
