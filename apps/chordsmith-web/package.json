@@ -44,13 +44,13 @@
     "package:itch": "npm run build && node scripts/package-itch.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "bestzip": "^2.2.7",
     "eslint": "^9.28.0",
     "fflate": "0.8.3",
-    "prettier": "^3.9.8",
+    "prettier": "^3.9.10",
     "typescript": "^5.8.3",
     "vitest": "^4.1.11",
-    "vite": "^6.3.5"
+    "vite": "^6.4.4"
   }
 }

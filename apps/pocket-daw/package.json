@@ -95,14 +95,14 @@
     "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@tauri-apps/cli": "^2.11.4",
-    "@types/adm-zip": "^0.5.8",
-    "@types/node": "^25.9.8",
+    "@playwright/test": "^1.64.0",
+    "@tauri-apps/cli": "^2.12.2",
+    "@types/adm-zip": "^0.6.0",
+    "@types/node": "^25.9.9",
     "adm-zip": "^0.6.1",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
+    "vite": "^6.4.4",
     "vitest": "^4.1.11"
   }
 }
