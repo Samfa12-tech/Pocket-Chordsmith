@@ -39,6 +39,36 @@ Prepared section stems live in `PCSPlaybackProfile.section_stem_sets`:
 
 At runtime, `PocketChordsmithConductor.queue_section("B")` changes the chart section and resolves the matching section stem map. Call `conductor.prewarm_audio()` during loading so section/state/full-song stems are imported or diagnosed before gameplay.
 
+Section stem files start at the beginning of that section. The conductor
+subtracts the current arrangement occurrence's start tick, so repeated A/B
+sections and halfway seeks use the same local audio. `stem_paths` remains
+arrangement-absolute. State sets also retain absolute playback by default; an
+explicit `state_stem_origin_ticks[state_name]` declares the absolute tick that
+corresponds to zero in a state-local file. Do not infer origins from filenames.
+`seek_tick()` repositions prepared players as well as chart/event cursors.
+An empty selection clears obsolete player streams so a later seek/jump cannot
+restart the preceding section. Pause also pauses the actual prepared players;
+a seek while paused prepares the new set but starts it only on Resume.
+
+The automated `tests/pcs_stem_origin_test.gd` uses deterministic PCM tones,
+actual Godot players and engine-bus capture with the warmed Dummy driver. It
+checks local/absolute positions and tone identity in both player modes,
+nonempty-to-empty silence, automatic A/B/repeated-A transitions with processing
+active, explicit state origins, pause/seek/resume, ordinary pause/resume position
+and in-place player-mode switching with exclusive ownership. It does not establish
+physical output, human listening, source-engine fidelity or cold-load budgets.
+
+Game-pack import uses exclusive full-mix/layer selection. The adaptive default
+excludes the full mix and duplicate aggregate/branch drums. Choose
+`playback_mix: "full-mix"` for the source reference or `drum_stems: "branches"`
+for independent drum branches. Core's shared texture bed is a single layer.
+Keep baked layer gains at unity. `PCSChartBuildTools` sets pack-local WAVs to
+lossless PCM import; let the editor reimport before auditioning or exporting the
+game. Godot 4.6 otherwise defaults to lossy QOA. Uncompressed stems require more
+memory, so cold-load budgeting remains a separate gate. See
+`docs/GODOT_PARITY_EXPORT_WORKFLOW.md` in the repository root for contracts and
+the rendered Core PCM comparison command.
+
 Suggested full-arrangement stem names:
 
 ```text

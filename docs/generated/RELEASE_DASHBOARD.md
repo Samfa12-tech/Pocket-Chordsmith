@@ -10,6 +10,6 @@
 | Pocket DAW | source 0.6.59; projectSchema 3; latestPublished 0.6.50; lastInstalledSmoke 0.6.50 | public-alpha-source-ahead-of-public | GitHub updater / stable itch bootstrapper | pocket-daw-v0.6.50 | `cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test` |
 | Pocket Audio Core | package 0.3.0; schemas 16,17 | private-workspace-package | repository-only | 0.2.0 | `cd packages/pocket-audio-core && npm test && npm run verify:family-parity` |
 | PCS Format | package 0.2.0; canonicalSchema 17; legacyProjectionSchema 16 | private-workspace-package | repository-only | 0.2.0 | `cd packages/pcs-format && npm test` |
-| Pocket Chordsmith Godot addon | addon 1.2.0; schemas 16,17; supportedGodot 4.6.3 | public-addon | Godot addon-only release | 1.2.0 | `node scripts/verify-godot-ci.mjs --godot-bin <godot>` |
+| Pocket Chordsmith Godot addon | addon 1.3.0; schemas 16,17; supportedGodot 4.6.3 | public-addon-source-ahead-of-public | Godot addon-only release | 1.2.0 | `node scripts/verify-godot-ci.mjs --godot-bin <godot>` |
 
 Pocket DAW claims remain bound to `apps/pocket-daw/release-status.json`; source, published, and exact installed-smoke versions are intentionally separate domains.

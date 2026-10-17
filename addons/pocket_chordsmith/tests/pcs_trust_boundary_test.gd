@@ -11,6 +11,7 @@ var _import_count := 0
 
 func _init() -> void:
 	_test_receiver_boundary()
+	_test_file_length_limits()
 	_test_manifest_asset_boundary()
 	_test_zip_boundary()
 	if _failures.is_empty():
@@ -64,6 +65,27 @@ func _test_manifest_asset_boundary() -> void:
 	_expect(str((trusted.get("profile").stem_paths as Dictionary).get("drums", "")) == external_path, "trusted-project mode preserves the external path")
 	var invalid_type: Dictionary = GamePackManifest.create_playback_profile_from_manifest({"assets": {"drums": "payload.gd"}}, "user://pack")
 	_expect(not bool(invalid_type.get("ok", false)), "manifest rejects unsupported asset types before profile creation")
+
+
+func _test_file_length_limits() -> void:
+	var tools := BuildTools.new()
+	var path := "user://pcs-trust-boundary-oversize.json"
+	var bytes := PackedByteArray()
+	bytes.resize(BuildTools.MAX_SOURCE_TEXT_BYTES + 1)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	_expect(file != null, "oversize length fixture opens")
+	if file == null:
+		return
+	file.store_buffer(bytes)
+	file.close()
+	var source: Dictionary = tools.compile_file(path)
+	_expect(not bool(source.get("ok", false)), "source over size limit is refused before JSON processing")
+	_expect(str(source.get("errors", [])).contains("import limit"), "source refusal retains the bounded import error")
+	var manifest: Dictionary = GamePackManifest.load_manifest_file(path)
+	_expect(not bool(manifest.get("ok", false)), "manifest over size limit is refused before JSON processing")
+	_expect(str(manifest.get("errors", [])).contains("byte limit"), "manifest refusal retains the bounded manifest error")
+	var missing: Dictionary = tools._extract_game_pack_zip("user://pcs-trust-boundary-nonexistent.zip", "user://pcs-trust-boundary-zips/imports", {})
+	_expect(not bool(missing.get("ok", false)), "unopenable archive fails closed before ZIP processing")
 
 
 func _test_zip_boundary() -> void:

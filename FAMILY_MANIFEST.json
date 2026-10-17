@@ -139,12 +139,12 @@
       "path": "addons/pocket_chordsmith",
       "kind": "godot-addon",
       "versions": {
-        "addon": "1.2.0",
+        "addon": "1.3.0",
         "schemas": "16,17",
         "supportedGodot": "4.6.3"
       },
       "license": "MIT",
-      "releaseStatus": "public-addon",
+      "releaseStatus": "public-addon-source-ahead-of-public",
       "packageCommand": "godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- --output <zip>",
       "testCommand": "node scripts/verify-godot-ci.mjs --godot-bin <godot>",
       "deployment": {
