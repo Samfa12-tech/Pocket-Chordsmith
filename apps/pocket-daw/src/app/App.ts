@@ -701,11 +701,13 @@ export class App {
       && (this.state.lowerDockTab === "export-details" || this.state.showFilePanel);
   }
 
-  private renderReadinessUpdate() {
+  private renderReadinessUpdate({ updaterOnly = false }: { updaterOnly?: boolean } = {}) {
     // Background readiness never changes the export controls. Keep their live
     // DOM (and uncommitted fields) until an intentional surface change renders
     // the latest state. Open Add Track and updater panels still refresh now.
-    if (this.shouldDeferReadinessRender()) {
+    // A silent check has no visible updater controls to refresh. Replacing the
+    // studio at both check boundaries stalls unrelated work and loses live DOM.
+    if ((updaterOnly && !this.state.showUpdaterPanel && !this.root.querySelector(".updater-panel")) || this.shouldDeferReadinessRender()) {
       const status = this.root.querySelector<HTMLElement>('[data-transport-status]');
       if (status && status.textContent !== this.state.status) status.textContent = this.state.status;
       if (status) status.title = this.state.status;
@@ -4603,7 +4605,7 @@ export class App {
 
   private async checkForUpdates(showPanel: boolean) {
     Object.assign(this.state, beginUpdaterCheck(this.state, showPanel));
-    this.renderReadinessUpdate();
+    this.renderReadinessUpdate({ updaterOnly: true });
 
     const result = await checkForPocketDawUpdate();
     const patch = applyUpdaterCheckResult(this.state, result, showPanel);
@@ -4611,7 +4613,7 @@ export class App {
     // export field or open a modal over its owner. Help opens the retained result.
     if (!showPanel && this.shouldDeferReadinessRender()) patch.showUpdaterPanel = false;
     Object.assign(this.state, patch);
-    this.renderReadinessUpdate();
+    this.renderReadinessUpdate({ updaterOnly: true });
   }
 
   private async downloadAndInstallUpdate() {

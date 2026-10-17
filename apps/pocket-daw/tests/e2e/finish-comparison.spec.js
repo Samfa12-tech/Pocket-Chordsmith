@@ -266,6 +266,54 @@ for (const surface of ["selection", "search composition", "category", "folder", 
   });
 }
 
+for (const available of [false, true]) {
+  test(`closed passive updater preserves the studio DOM until an update needs its panel (${available})`, async ({ page }) => {
+    await fixture(page, false, { holdStartupUpdate: true });
+    await page.goto("/");
+    await page.waitForFunction(() => !!window.__fireStartupUpdate);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.evaluate(() => {
+      window.__passiveStudioRoot = document.querySelector("#app").firstElementChild;
+      window.__discoveryRenderStacks = [];
+      window.__observeDiscovery = true;
+      window.__fireStartupUpdate();
+    });
+    await page.waitForFunction(() => !!window.__resolveStartupCheck);
+    expect(await page.evaluate(() => document.querySelector("#app").firstElementChild === window.__passiveStudioRoot)).toBe(true);
+    expect(await page.evaluate(() => window.__discoveryRenderStacks)).toEqual([]);
+    await expect(page.locator(".updater-panel")).toHaveCount(0);
+    await page.evaluate(async available => {
+      window.__resolveStartupCheck(available);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }, available);
+    if (available) {
+      await expect(page.locator(".updater-panel")).toContainText("99.99.99");
+      await expect(page.locator('[data-action="updater-download-install"]')).toBeEnabled();
+      await expect(page.locator('[data-transport-status]')).toContainText("99.99.99 is available");
+    } else {
+      expect(await page.evaluate(() => document.querySelector("#app").firstElementChild === window.__passiveStudioRoot)).toBe(true);
+      expect(await page.evaluate(() => window.__discoveryRenderStacks)).toEqual([]);
+      await expect(page.locator(".updater-panel")).toHaveCount(0);
+    }
+    expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
+  });
+}
+
+test("passive updater still refreshes and completes an already-open panel", async ({ page }) => {
+  await fixture(page, false, { holdStartupUpdate: true });
+  await page.goto("/");
+  await page.waitForFunction(() => !!window.__fireStartupUpdate);
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Check for Updates", exact: true }).click();
+  await expect(page.locator(".updater-panel")).toBeVisible();
+  await page.evaluate(() => window.__fireStartupUpdate());
+  await page.waitForFunction(() => !!window.__resolveStartupCheck);
+  await expect(page.locator(".updater-panel")).toContainText("Checking for updates");
+  await page.evaluate(() => window.__resolveStartupCheck(false));
+  await expect(page.locator(".updater-panel")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__finishCalls.some(([command]) => /updater\|(?:download|install)/.test(command)))).toBe(false);
+});
+
 test("explicit updater checks still refresh their visible panel while Export is selected", async ({ page }) => {
   await fixture(page, false, { holdStartupUpdate: true }); await openFinish(page);
   await page.getByRole("button", { name: "Help", exact: true }).click();
