@@ -1,12 +1,8 @@
 # Pocket Chordsmith Agent Guide
 
-Use this file as the low-token entrypoint for Codex and other coding agents.
-
 ## Start Here
 
-1. Read `PROJECT_MEMORY.md` first for the current monorepo shape, baselines, ignored local reference folders, and release boundaries.
-2. For browser app work, read `apps/chordsmith-web/POCKET_CHORDSMITH_CODEX_CONTEXT.md` before editing.
-3. Inspect the current implementation before changing behavior; prefer small, surgical patches.
+Use [project memory](PROJECT_MEMORY.md) for monorepo baselines and local references, and the [browser app context](apps/chordsmith-web/POCKET_CHORDSMITH_CODEX_CONTEXT.md) for browser composer work. Check [Pocket DAW release status](apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md) for current delivery state. Use current app code and manifests for implementation facts.
 
 ## Active Project Shape
 
@@ -99,5 +95,5 @@ Do not load broad design guidance by default.
 - Run one combined exact-installed audio/MIDI/export smoke with `--record-ms 10000 --midi-record-ms 10000`. MIDI input is the agent's job through `scripts/send-loopmidi-smoke.ps1`; do not repeatedly ask the user to exercise the microphone. A fresh audible microphone pass is required only when there is no eligible retained baseline or the deterministic native-capture fingerprint changed. Otherwise use the fail-closed `baseline-reuse` mode documented in `RELEASE_TESTING_FAST_PATH.md`; the current installer must still prove real PCM duration/file integrity, connected loopMIDI, and retained WAV/MIDI exports.
 - After exact-installer smoke, do not run an installer-producing command. Run evidence-only `verify:candidate` with the receipt, then publish only with `release:publish-exact -- --receipt <receipt> --verification-report <report>`. The legacy `release:update:publish` name is an exact-only alias and no longer rebuilds.
 - GitHub release uploads may normalize installer asset names with spaces to dots, for example `Pocket.DAW_0.6.3_x64-setup.exe`. Generate the updater manifest with the actual downloadable asset URL and verify it with `curl -L -I`.
-- Current itch `samfa12/pocket-daw:windows-installer` payload is the verified full0.6.59 setup/MSI bundle (build2142969), not a bootstrapper. Do not infer payload type from channel name/status. Ordinary source/docs work does not push itch. A deliberate installer release may update the existing full-installer delivery only from exact verified frozen assets. Bootstrapper tooling is optional and needs its own reviewed delivery decision.
+- For itch, verify the actual `samfa12/pocket-daw:windows-installer` payload against [the delivery notes](apps/pocket-daw/docs/ITCH_BUILD_PUSH_AND_UPDATE_TEST.md). The established path is the full-installer bundle. Update it only from exact verified frozen assets in a deliberate release. Bootstrapper delivery needs a separate reviewed decision. Ordinary source and docs work does not push itch.
 - After uploading, verify both latest/download manifests, download and hash the remote setup EXE, check `gh release view`, and confirm the release tag, remote target commit, `origin/main`, and tested commit agree. Use `butler status` for channel/version identity and fresh payload download/hash checks when updating itch; status alone does not prove payload contents.
