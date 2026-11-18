@@ -50,7 +50,7 @@
     "fflate": "0.8.3",
     "prettier": "^3.9.8",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "vite": "^6.4.5"
   }
 }
