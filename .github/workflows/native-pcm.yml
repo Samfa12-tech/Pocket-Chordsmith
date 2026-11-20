@@ -1,0 +1,54 @@
+name: Native PCM
+
+on:
+  pull_request:
+    paths:
+      - 'packages/pocket-audio-core/native/**'
+      - '.github/workflows/native-pcm.yml'
+  push:
+    branches: [main, master, codex/horde-native-pcm-core]
+    paths:
+      - 'packages/pocket-audio-core/native/**'
+      - '.github/workflows/native-pcm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-pcm-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-pcm:
+    name: ${{ matrix.compiler }} ${{ matrix.configuration }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+        compiler: [GCC, Clang, MSVC]
+        include:
+          - os: ubuntu-24.04
+            compiler: GCC
+            cxx: g++
+          - os: ubuntu-24.04
+            compiler: Clang
+            cxx: clang++
+          - os: windows-2022
+            compiler: MSVC
+    steps:
+      - name: Check out canonical source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure standalone Core tests
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: >-
+          cmake -S packages/pocket-audio-core/native -B build/native-pcm
+          -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
+          -DPOCKET_AUDIO_NATIVE_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build/native-pcm --config ${{ matrix.configuration }} --parallel 2
+      - name: Test
+        run: ctest --test-dir build/native-pcm -C ${{ matrix.configuration }} --output-on-failure --no-tests=error
